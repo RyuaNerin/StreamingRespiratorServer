@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -20,7 +21,7 @@ type TimeLine struct {
 	runningCtxCancel context.CancelFunc // 갱신 취소용 함수
 
 	funcGetUrl func(cursor string) (method string, url string) // cursor -> URL
-	funcMain   func(r io.Reader, isFirstRefresh bool) (cursor string, streamingStatuses []interface{}, users map[uint64]map[string]interface{})
+	funcMain   func(r io.Reader, isFirstRefresh bool) (cursor string, streamingStatuses TwitterStatusList, users map[uint64]TwitterUser)
 }
 
 func (tl *TimeLine) Start() {
@@ -36,6 +37,7 @@ func (tl *TimeLine) Start() {
 
 	go tl.refreshThread(ctx)
 }
+
 func (tl *TimeLine) Stop() {
 	tl.runningLock.Lock()
 	defer tl.runningLock.Unlock()
@@ -46,7 +48,6 @@ func (tl *TimeLine) Stop() {
 
 	tl.runningCtxCancel()
 	tl.runningCtxCancel = nil
-
 }
 
 func (tl *TimeLine) refreshThread(ctx context.Context) {
@@ -89,7 +90,24 @@ func (tl *TimeLine) update(ctx context.Context, method, url string, isFirstRefre
 	cursor, streamingStatuses, users := tl.funcMain(res.Body, isFirstRefresh)
 
 	if !isFirstRefresh {
-		tl.account.Send(streamingStatuses...)
+		sort.Sort(&streamingStatuses)
+
+		go func() {
+			dataList := make([][]byte, 0, len(streamingStatuses))
+
+			for _, status := range streamingStatuses {
+				data, buff := Serialize(&status)
+				if buff != nil {
+					defer PoolBytesBuffer.Put(buff)
+
+					dataList = append(dataList, data)
+				}
+			}
+
+			if len(dataList) > 0 {
+				tl.account.Send(dataList...)
+			}
+		}()
 	}
 
 	go tl.account.UserCache(users)

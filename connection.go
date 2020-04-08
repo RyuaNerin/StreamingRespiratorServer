@@ -7,7 +7,8 @@ import (
 )
 
 const (
-	KeepAlivePeriod = 5 * time.Second
+	KeepAlivePeriod      = 5 * time.Second
+	FriendsRefreshPeriod = 30 * time.Minute
 )
 
 var (
@@ -35,7 +36,6 @@ func (c *Connection) Broadcaster() {
 	var err error
 
 	for atomic.LoadInt32(&c.closed) == 0 {
-
 		select {
 		case <-time.After(KeepAlivePeriod):
 			_, err = c.w.Write(KeepAliveData)
@@ -44,7 +44,7 @@ func (c *Connection) Broadcaster() {
 			_, err = c.w.Write(d)
 		}
 
-		if err == nil {
+		if err != nil && err != io.EOF {
 			atomic.StoreInt32(&c.closed, 1)
 			break
 		}

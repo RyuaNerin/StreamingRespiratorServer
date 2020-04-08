@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
+	"github.com/spf13/cast"
 )
 
 const (
@@ -129,7 +129,7 @@ func (act *Account) CreateRequest(method string, url string, body io.Reader) (*h
 	return req, nil
 }
 
-func (act *Account) Send(data ...interface{}) {
+func (act *Account) Send(data ...[]byte) {
 	act.onceInit.Do(act.Init)
 
 	act.connectionsLock.RLock()
@@ -143,57 +143,42 @@ func (act *Account) Send(data ...interface{}) {
 	}
 	act.connectionsLock.RUnlock()
 
-	dataBytes := make([][]byte, 0, len(data))
-
 	var wg sync.WaitGroup
-	for _, d := range data {
-		buff := PoolBytesBuffer.Get().(*bytes.Buffer)
-		defer PoolBytesBuffer.Put(buff)
+	for _, conn := range connList {
+		wg.Add(1)
 
-		if jsoniter.NewEncoder(buff).Encode(d) == nil {
-			dataBytes = append(dataBytes, buff.Bytes())
-		}
-	}
+		go func() {
+			defer wg.Done()
 
-	for _, d := range dataBytes {
-		for _, conn := range connList {
-			wg.Add(1)
-
-			go conn.Send(d)
-		}
+			for _, d := range data {
+				go conn.Send(d)
+			}
+		}()
 	}
 
 	wg.Wait()
 }
 
-func (act *Account) UserCache(users map[uint64]map[string]interface{}) {
+func (act *Account) UserCache(users map[uint64]TwitterUser) {
 	act.userCacheLock.Lock()
 	defer act.userCacheLock.Unlock()
 
 	for _, user := range users {
-		idRaw, ok := user["id"]
-		if !ok {
+		id, err := cast.ToUint64E(user["id"])
+		if err != nil {
 			continue
-		}
-		var id uint64
-
-		switch v := idRaw.(type) {
-		case int:
-			id = uint64(v)
-		case int64:
-			id = uint64(v)
 		}
 
-		name, ok := user["name"].(string)
-		if !ok {
+		name, err := cast.ToStringE(user["name"])
+		if err != nil {
 			continue
 		}
-		screenName, ok := user["name"].(string)
-		if !ok {
+		screenName, err := cast.ToStringE(user["name"])
+		if err != nil {
 			continue
 		}
-		profileImage, ok := user["name"].(string)
-		if !ok {
+		profileImage, err := cast.ToStringE(user["profile_image_url"])
+		if err != nil {
 			continue
 		}
 
@@ -207,14 +192,20 @@ func (act *Account) UserCache(users map[uint64]map[string]interface{}) {
 					act.userCache[i].screenName = screenName
 					act.userCache[i].profileImage = profileImage
 
-					go act.Send(
-						&PacketEvent{
+					go func() {
+						packet := PacketEvent{
 							Event:     "user_update",
-							CreatedAt: time.Now().UTC(),
+							CreatedAt: time.Now(),
 							Source:    user,
 							Target:    user,
-						},
-					)
+						}
+						data, buff := Serialize(&packet)
+						if buff != nil {
+							defer PoolBytesBuffer.Put(buff)
+
+							act.Send(data)
+						}
+					}()
 				}
 
 				exists = true
@@ -226,7 +217,27 @@ func (act *Account) UserCache(users map[uint64]map[string]interface{}) {
 			continue
 		}
 
-		// 공간확보
+		for len(act.userCache) >= MaxUserCacheCount {
+			minIndex := 0
+			for i := range act.userCache {
+				if act.userCache[i].lastModified.Before(act.userCache[minIndex].lastModified) {
+					minIndex = i
+				}
+			}
 
+			act.userCache[minIndex] = act.userCache[len(act.userCache)-1]
+			act.userCache = act.userCache[:len(act.userCache)-1]
+		}
+
+		act.userCache = append(
+			act.userCache,
+			userCache{
+				id:           id,
+				name:         name,
+				screenName:   screenName,
+				profileImage: profileImage,
+				lastModified: time.Now(),
+			},
+		)
 	}
 }

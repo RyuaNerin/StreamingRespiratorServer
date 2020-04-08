@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"sync"
+
+	jsoniter "github.com/json-iterator/go"
 )
 
 const (
@@ -16,3 +18,14 @@ var (
 		},
 	}
 )
+
+func Serialize(v interface{}) (data []byte, buff *bytes.Buffer) {
+	buff = PoolBytesBuffer.Get().(*bytes.Buffer)
+
+	if err := jsoniter.NewEncoder(buff).Encode(v); err != nil {
+		return buff.Bytes(), buff
+	}
+
+	PoolBytesBuffer.Put(buff)
+	return nil, nil
+}
