@@ -1,10 +1,19 @@
 package main
 
 import (
+	"bytes"
+	"container/list"
 	"io"
 	"net/http"
 	"regexp"
 	"sync"
+	"time"
+
+	jsoniter "github.com/json-iterator/go"
+)
+
+const (
+	MaxUserCacheCount = 500
 )
 
 type Account struct {
@@ -12,18 +21,30 @@ type Account struct {
 	ScreenName string `json:"screen_name"`
 	Cookie     string `json:"cookie"`
 
-	once sync.Once
-
-	transport http.Client
-
-	lock sync.RWMutex
-
+	onceInit         sync.Once
 	cookieXCsrfToken string
 
-	connected       bool
-	waitTimeHome    float32
-	waitTimeAboutMe float32
-	waitTimeDm      float32
+	httpClient http.Client
+
+	connectionsLock sync.RWMutex
+	connections     *list.List        // io.Writer. 소켓들
+	chanBroadcast   chan bytes.Buffer // 소켓들에 전송할 데이터 채널.
+
+	tlHome    TimeLine
+	tlAboutMe TimeLine
+	tlDm      TimeLine
+
+	userCacheLock sync.Mutex
+	userCache     []userCache
+}
+
+type userCache struct {
+	id           uint64
+	name         string
+	screenName   string
+	profileImage string
+
+	lastModified time.Time
 }
 
 var (
@@ -35,10 +56,57 @@ var (
 	regExtractXCsrfToken = regexp.MustCompile(`ct0=([^;]+)`)
 )
 
+func (act *Account) Init() {
+	act.httpClient.Transport = &http.Transport{
+		MaxIdleConnsPerHost: 32,
+	}
+
+	act.cookieXCsrfToken = regExtractXCsrfToken.FindStringSubmatch(act.Cookie)[1]
+	act.connections = list.New()
+
+	act.userCache = make([]userCache, 0, MaxUserCacheCount)
+
+	// 타임라인 초기화
+}
+
+func (act *Account) AddConnectionAndWait(w io.Writer) {
+	conn := Connection{
+		w:    w,
+		wait: make(chan struct{}),
+		data: make(chan []byte),
+	}
+
+	act.connectionsLock.Lock()
+	if act.connections.Len() == 0 {
+		act.tlAboutMe.Start()
+		act.tlDm.Start()
+		act.tlHome.Start()
+	}
+	connNode := act.connections.PushBack(
+		&conn,
+	)
+	act.connectionsLock.Unlock()
+
+	go conn.Broadcaster()
+	<-conn.wait
+
+	act.connectionsLock.Lock()
+	act.connections.Remove(connNode)
+
+	if act.connections.Len() == 0 {
+		act.tlAboutMe.Stop()
+		act.tlDm.Stop()
+		act.tlHome.Stop()
+
+		act.userCacheLock.Lock()
+		act.userCache = act.userCache[:0]
+		act.userCacheLock.Unlock()
+	}
+	act.connectionsLock.Unlock()
+}
+
 func (act *Account) CreateRequest(method string, url string, body io.Reader) (*http.Request, error) {
-	act.once.Do(func() {
-		act.cookieXCsrfToken = regExtractXCsrfToken.FindStringSubmatch(act.Cookie)[1]
-	})
+	act.onceInit.Do(act.Init)
 
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
@@ -59,4 +127,106 @@ func (act *Account) CreateRequest(method string, url string, body io.Reader) (*h
 	}
 
 	return req, nil
+}
+
+func (act *Account) Send(data ...interface{}) {
+	act.onceInit.Do(act.Init)
+
+	act.connectionsLock.RLock()
+	connList := make([]*Connection, 0, act.connections.Len())
+	{
+		conn := act.connections.Front()
+		for conn != nil {
+			connList = append(connList, conn.Value.(*Connection))
+			conn = conn.Next()
+		}
+	}
+	act.connectionsLock.RUnlock()
+
+	dataBytes := make([][]byte, 0, len(data))
+
+	var wg sync.WaitGroup
+	for _, d := range data {
+		buff := PoolBytesBuffer.Get().(*bytes.Buffer)
+		defer PoolBytesBuffer.Put(buff)
+
+		if jsoniter.NewEncoder(buff).Encode(d) == nil {
+			dataBytes = append(dataBytes, buff.Bytes())
+		}
+	}
+
+	for _, d := range dataBytes {
+		for _, conn := range connList {
+			wg.Add(1)
+
+			go conn.Send(d)
+		}
+	}
+
+	wg.Wait()
+}
+
+func (act *Account) UserCache(users map[uint64]map[string]interface{}) {
+	act.userCacheLock.Lock()
+	defer act.userCacheLock.Unlock()
+
+	for _, user := range users {
+		idRaw, ok := user["id"]
+		if !ok {
+			continue
+		}
+		var id uint64
+
+		switch v := idRaw.(type) {
+		case int:
+			id = uint64(v)
+		case int64:
+			id = uint64(v)
+		}
+
+		name, ok := user["name"].(string)
+		if !ok {
+			continue
+		}
+		screenName, ok := user["name"].(string)
+		if !ok {
+			continue
+		}
+		profileImage, ok := user["name"].(string)
+		if !ok {
+			continue
+		}
+
+		exists := false
+		for i, uc := range act.userCache {
+			if uc.id == id {
+				act.userCache[i].lastModified = time.Now()
+
+				if uc.name == name || uc.screenName != screenName || uc.profileImage != profileImage {
+					act.userCache[i].name = name
+					act.userCache[i].screenName = screenName
+					act.userCache[i].profileImage = profileImage
+
+					go act.Send(
+						&PacketEvent{
+							Event:     "user_update",
+							CreatedAt: time.Now().UTC(),
+							Source:    user,
+							Target:    user,
+						},
+					)
+				}
+
+				exists = true
+				break
+			}
+		}
+
+		if exists {
+			continue
+		}
+
+		// 공간확보
+
+	}
 }

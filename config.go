@@ -17,10 +17,6 @@ var Config struct {
 		RetweetWithComment bool `json:"retweet_with_comment"`
 		MyRetweet          bool `json:"my_retweet"`
 	} `json:"filter"`
-
-	Proxy struct {
-		Port int `json:"port"`
-	} `json:"proxy"`
 }
 
 func LoadConfig(path string) {
