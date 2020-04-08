@@ -147,11 +147,12 @@ func (act *Account) Send(data ...[]byte) {
 	for _, conn := range connList {
 		wg.Add(1)
 
+		c := conn
 		go func() {
 			defer wg.Done()
 
 			for _, d := range data {
-				go conn.Send(d)
+				go c.Send(d)
 			}
 		}()
 	}
