@@ -11,7 +11,7 @@ func (ts *TwitterStatusList) Len() int {
 	return len(*ts)
 }
 func (ts *TwitterStatusList) Less(i, k int) bool {
-	return cast.ToUint64((*ts)[i]["id"]) > cast.ToUint64((*ts)[k]["id"])
+	return cast.ToUint64((*ts)[i]["id"]) < cast.ToUint64((*ts)[k]["id"])
 }
 func (ts *TwitterStatusList) Swap(i, k int) {
 	(*ts)[i], (*ts)[k] = (*ts)[k], (*ts)[i]
@@ -19,7 +19,7 @@ func (ts *TwitterStatusList) Swap(i, k int) {
 
 func (ts TwitterStatus) AddUserToMap(users map[uint64]TwitterUser) {
 	if user, err := cast.ToStringMapE(ts["user"]); err != nil {
-		if id, err := cast.ToUint64E(user[""]); err == nil {
+		if id, err := cast.ToUint64E(user["id"]); err == nil {
 			users[id] = user
 		}
 	}
@@ -30,5 +30,11 @@ func (ts TwitterStatus) AddUserToMap(users map[uint64]TwitterUser) {
 
 	if quotedStatus := TwitterStatus(cast.ToStringMap(ts["quoted_status"])); quotedStatus != nil {
 		quotedStatus.AddUserToMap(users)
+	}
+}
+
+func (tu TwitterUser) AdddUserToMap(users map[uint64]TwitterUser) {
+	if id, err := cast.ToUint64E(tu["id"]); err == nil {
+		users[id] = tu
 	}
 }

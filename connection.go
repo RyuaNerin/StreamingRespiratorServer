@@ -51,7 +51,7 @@ func (c *Connection) Broadcaster() {
 
 	}
 	// 채널 비우기
-	for _ = range c.data {
+	for range c.data {
 	}
 
 	close(c.wait)
