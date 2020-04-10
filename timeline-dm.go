@@ -2,7 +2,9 @@ package main
 
 import (
 	"io"
+	"sort"
 	"strconv"
+	"time"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/spf13/cast"
@@ -20,34 +22,98 @@ func tlDMGetUrl(cursor string) (method string, url string) {
 	return
 }
 
-func tlDMMain(r io.Reader, isFirstRefresh bool) (cursor string, streamingStatuses TwitterStatusList, users map[uint64]TwitterUser) {
-	var statusList []TwitterStatus
-	if err := jsoniter.NewDecoder(r).Decode(&statusList); err != nil && err != io.EOF {
+func tlDMMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser) {
+	var directMessage TwitterDirectMessage
+
+	if err := jsoniter.NewDecoder(r).Decode(&directMessage); err != nil && err != io.EOF {
 		return
 	}
-	if len(statusList) == 0 {
+
+	data := directMessage.UserEvents
+	if data == nil {
+		data = directMessage.UserInbox
+	}
+	if data == nil {
 		return
 	}
 
 	if !isFirstRefresh {
-		streamingStatuses = make([]TwitterStatus, 0, len(statusList))
+		if len(data.Entries) > 0 {
+			users = make(map[uint64]TwitterUser)
 
-		users = make(map[uint64]TwitterUser)
-		for _, status := range statusList {
-			streamingStatuses = append(streamingStatuses, status)
+			packetJsonList := make([]PacketDirectMessage, len(data.Entries))
 
-			status.AddUserToMap(users)
+			for _, entry := range data.Entries {
+				if entry.Message != nil {
+					// ToPacket
+					packetJson := PacketDirectMessage{
+						Item: PacketDirectMessageItem{
+							Id:        entry.Message.Data.Id,
+							IdStr:     strconv.FormatUint(entry.Message.Data.Id, 10),
+							CreatedAt: time.Unix(entry.Message.Data.Time/1000, entry.Message.Data.Time%1000),
+							Recipient: data.Users[entry.Message.Data.RecipiendId],
+							Sender:    data.Users[entry.Message.Data.SenderId],
+						},
+					}
+					if packetJson.Item.Recipient != nil {
+						packetJson.Item.RecipientId = cast.ToUint64(packetJson.Item.Recipient["id"])
+						packetJson.Item.RecipientScreenName = cast.ToString(packetJson.Item.Recipient["screen_name"])
+					}
+					if packetJson.Item.Sender != nil {
+						packetJson.Item.SenderId = cast.ToUint64(packetJson.Item.Sender["id"])
+						packetJson.Item.SenderScreenName = cast.ToString(packetJson.Item.Sender["screen_name"])
+					}
+					packetJsonList = append(packetJsonList, packetJson)
+				}
+			}
+
+			for _, user := range data.Users {
+				user.AddUserToMap(users)
+			}
+
+			sort.Slice(packetJsonList, func(i, k int) bool {
+				return packetJsonList[i].Item.Id < packetJsonList[k].Item.Id
+			})
+			for _, packetJson := range packetJsonList {
+				if packet, ok := NewPacket(&packetJson); ok {
+					packetList = append(packetList, packet)
+				}
+			}
 		}
 	}
 
-	var maxId uint64 = 0
-	for _, t := range statusList {
-		id := cast.ToUint64(t["id"])
-		if maxId > id {
-			maxId = id
+	cursor = data.Cursor
+
+	/**
+	if (isNotFirstRefresh)
+	{
+		if (data?.Items?.Entries != null)
+		{
+			foreach (var item in data.Items.Entries.Where(e => e.Message != null))
+			{
+				try
+				{
+					lstItems.Add(ToPacket(data, item));
+				}
+				catch
+				{
+				}
+			}
+
+			lstItems.Sort((a, b) => a.Item.Id.CompareTo(b.Item.Id));
+		}
+
+		if (data?.Items?.Users != null)
+		{
+			foreach (var user in data.Items.Users.Values)
+			{
+				lstUsers.Add(user);
+			}
 		}
 	}
-	cursor = strconv.FormatUint(maxId, 10)
+
+	return data?.Items?.Cursor;
+	*/
 
 	return
 }

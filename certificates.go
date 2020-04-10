@@ -4,12 +4,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+
+	"github.com/elazarl/goproxy"
 )
 
 var (
 	certPool   = x509.NewCertPool()
 	certCA     *x509.Certificate
 	certClient tls.Certificate
+
+	tlsConfig tls.Config
 )
 
 func init() {
@@ -109,10 +113,17 @@ p+wcGu4H7SqlQZI6JZbnYTyF5CPKuzcRcGfDbIp4z3EiV5lRmOdnBQ==
 	}
 
 	certClient.Leaf = certCA
-}
 
-type certStore int
+	goproxy.MitmConnect = &goproxy.ConnectAction{
+		Action: goproxy.ConnectMitm,
+		TLSConfig: func(host string, ctx *goproxy.ProxyCtx) (*tls.Config, error) {
+			return &tlsConfig, nil
+		},
+	}
 
-func (c *certStore) Fetch(hostname string, gen func() (*tls.Certificate, error)) (*tls.Certificate, error) {
-	return &certClient, nil
+	tlsConfig = tls.Config{
+		MinVersion:   tls.VersionTLS11,
+		NextProtos:   []string{"http/1.1"},
+		Certificates: []tls.Certificate{certClient},
+	}
 }

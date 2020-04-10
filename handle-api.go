@@ -1,11 +1,7 @@
 package main
 
-import (
-	"net/http"
+import "net/http"
 
-	"github.com/elazarl/goproxy"
-)
+func handleApi(w http.ResponseWriter, r *http.Request) {
 
-func handleApi(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	return req, ctx.Resp
 }

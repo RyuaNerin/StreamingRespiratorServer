@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"container/list"
 	"io"
 	"net/http"
@@ -27,8 +26,7 @@ type Account struct {
 	httpClient http.Client
 
 	connectionsLock sync.RWMutex
-	connections     *list.List        // io.Writer. 소켓들
-	chanBroadcast   chan bytes.Buffer // 소켓들에 전송할 데이터 채널.
+	connections     *list.List // io.Writer. 소켓들
 
 	tlHome    TimeLine
 	tlAboutMe TimeLine
@@ -129,7 +127,7 @@ func (act *Account) CreateRequest(method string, url string, body io.Reader) (*h
 	return req, nil
 }
 
-func (act *Account) Send(data ...[]byte) {
+func (act *Account) Send(packetList ...Packet) {
 	act.onceInit.Do(act.Init)
 
 	act.connectionsLock.RLock()
@@ -151,8 +149,8 @@ func (act *Account) Send(data ...[]byte) {
 		go func() {
 			defer wg.Done()
 
-			for _, d := range data {
-				go c.Send(d)
+			for _, d := range packetList {
+				go c.Send(d.d)
 			}
 		}()
 	}
@@ -194,17 +192,15 @@ func (act *Account) UserCache(users map[uint64]TwitterUser) {
 					act.userCache[i].profileImage = profileImage
 
 					go func() {
-						packet := PacketEvent{
+						packetJson := PacketEvent{
 							Event:     "user_update",
 							CreatedAt: time.Now(),
 							Source:    user,
 							Target:    user,
 						}
-						data, buff := Serialize(&packet)
-						if buff != nil {
-							defer PoolBytesBuffer.Put(buff)
-
-							act.Send(data)
+						if packet, ok := NewPacket(&packetJson); ok {
+							act.Send(packet)
+							packet.Release()
 						}
 					}()
 				}

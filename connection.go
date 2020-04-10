@@ -48,11 +48,8 @@ func (c *Connection) Broadcaster() {
 			atomic.StoreInt32(&c.closed, 1)
 			break
 		}
-
 	}
 	// 채널 비우기
-	for range c.data {
-	}
-
+	close(c.data)
 	close(c.wait)
 }

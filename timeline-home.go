@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"sort"
 	"strconv"
 
 	jsoniter "github.com/json-iterator/go"
@@ -20,8 +21,8 @@ func tlHomeGetUrl(cursor string) (method string, url string) {
 	return
 }
 
-func tlHomeMain(r io.Reader, isFirstRefresh bool) (cursor string, streamingStatuses TwitterStatusList, users map[uint64]TwitterUser) {
-	var statusList []TwitterStatus
+func tlHomeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser) {
+	var statusList TwitterStatusList
 	if err := jsoniter.NewDecoder(r).Decode(&statusList); err != nil && err != io.EOF {
 		return
 	}
@@ -30,20 +31,24 @@ func tlHomeMain(r io.Reader, isFirstRefresh bool) (cursor string, streamingStatu
 	}
 
 	if !isFirstRefresh {
-		streamingStatuses = make([]TwitterStatus, 0, len(statusList))
-
 		users = make(map[uint64]TwitterUser)
-		for _, status := range statusList {
-			streamingStatuses = append(streamingStatuses, status)
 
+		for _, status := range statusList {
 			status.AddUserToMap(users)
+		}
+
+		sort.Sort(&statusList)
+		for status := range statusList {
+			if p, ok := NewPacket(&status); ok {
+				packetList = append(packetList, p)
+			}
 		}
 	}
 
 	var maxId uint64 = 0
 	for _, t := range statusList {
 		id := cast.ToUint64(t["id"])
-		if maxId > id {
+		if id > maxId {
 			maxId = id
 		}
 	}

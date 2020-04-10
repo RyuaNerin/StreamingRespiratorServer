@@ -33,7 +33,7 @@ func (ts TwitterStatus) AddUserToMap(users map[uint64]TwitterUser) {
 	}
 }
 
-func (tu TwitterUser) AdddUserToMap(users map[uint64]TwitterUser) {
+func (tu TwitterUser) AddUserToMap(users map[uint64]TwitterUser) {
 	if id, err := cast.ToUint64E(tu["id"]); err == nil {
 		users[id] = tu
 	}

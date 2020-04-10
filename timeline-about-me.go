@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"sort"
 	"strconv"
 
 	jsoniter "github.com/json-iterator/go"
@@ -19,7 +20,7 @@ func tlAboutMeGetUrl(cursor string) (method string, url string) {
 	return
 }
 
-func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, streamingStatuses TwitterStatusList, users map[uint64]TwitterUser) {
+func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser) {
 	var activityList []TwitterActivity
 	if err := jsoniter.NewDecoder(r).Decode(&activityList); err != nil && err != io.EOF {
 		return
@@ -31,12 +32,13 @@ func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, streamingSt
 	if !isFirstRefresh {
 		users = make(map[uint64]TwitterUser, len(activityList))
 
+		statusList := make(TwitterStatusList, 0, len(activityList))
 		for _, activity := range activityList {
 			for _, t := range activity.Target {
 				t.AddUserToMap(users)
 			}
 			for _, t := range activity.Sources {
-				t.AdddUserToMap(users)
+				t.AddUserToMap(users)
 			}
 
 			switch {
@@ -45,7 +47,14 @@ func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, streamingSt
 			case Config.Filter.RetweetWithComment && activity.Action == "quote":
 				fallthrough
 			case activity.Action == "reply":
-				streamingStatuses = append(streamingStatuses, activity.Target...)
+				statusList = append(statusList, activity.Target...)
+			}
+		}
+
+		sort.Sort(&statusList)
+		for status := range statusList {
+			if p, ok := NewPacket(&status); ok {
+				packetList = append(packetList, p)
 			}
 		}
 	}
@@ -56,7 +65,6 @@ func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, streamingSt
 			maxPosition = activity.MaxPosition
 		}
 	}
-
 	cursor = strconv.FormatUint(maxPosition, 10)
 
 	return

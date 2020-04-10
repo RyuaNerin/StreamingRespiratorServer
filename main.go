@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/tls"
 	"flag"
 	"net"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/elazarl/goproxy"
+	"golang.org/x/net/http2"
 )
 
 var (
@@ -44,27 +44,8 @@ func main() {
 	if *argProxy != "" {
 		proxy := goproxy.NewProxyHttpServer()
 		proxy.Verbose = verbose
-		proxy.CertStore = new(certStore)
 
-		cond := proxy.OnRequest(goproxy.DstHostIs("userstream.twitter.com"))
-		cond.HandleConnect(goproxy.AlwaysMitm)
-		cond.DoFunc(handleStreaming)
-
-		cond = proxy.OnRequest(goproxy.DstHostIs("api.twitter.com"))
-		cond.HandleConnect(goproxy.AlwaysMitm)
-		cond.DoFunc(handleApi)
-
-		proxy.OnRequest().HandleConnect(
-			goproxy.FuncHttpsHandler(
-				func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
-					return goproxy.OkConnect, host
-				},
-			),
-		)
-
-		proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
-		})
+		initProxy(proxy)
 
 		server := http.Server{
 			Handler: proxy,
@@ -117,12 +98,8 @@ func main() {
 			}
 
 			if *argHttpPlain == false {
-				server.TLSConfig = &tls.Config{
-					MinVersion:   tls.VersionTLS11,
-					NextProtos:   []string{"http/1.1"},
-					Certificates: []tls.Certificate{certClient},
-				}
-
+				server.TLSConfig = &tlsConfig
+				http2.ConfigureServer(&server, &http2.Server{})
 				go server.ServeTLS(l, "", "")
 			} else {
 				go server.Serve(l)

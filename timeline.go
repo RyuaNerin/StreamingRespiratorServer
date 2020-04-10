@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"io"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -21,7 +20,7 @@ type TimeLine struct {
 	runningCtxCancel context.CancelFunc // 갱신 취소용 함수
 
 	funcGetUrl func(cursor string) (method string, url string) // cursor -> URL
-	funcMain   func(r io.Reader, isFirstRefresh bool) (cursor string, streamingStatuses TwitterStatusList, users map[uint64]TwitterUser)
+	funcMain   func(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser)
 }
 
 func (tl *TimeLine) Start() {
@@ -87,25 +86,15 @@ func (tl *TimeLine) update(ctx context.Context, method, url string, isFirstRefre
 	}
 
 	// Todo. user_modified
-	cursor, streamingStatuses, users := tl.funcMain(res.Body, isFirstRefresh)
+	cursor, packetList, users := tl.funcMain(res.Body, isFirstRefresh)
 
 	if !isFirstRefresh {
-		sort.Sort(&streamingStatuses)
-
 		go func() {
-			dataList := make([][]byte, 0, len(streamingStatuses))
-
-			for _, status := range streamingStatuses {
-				data, buff := Serialize(&status)
-				if buff != nil {
-					defer PoolBytesBuffer.Put(buff)
-
-					dataList = append(dataList, data)
+			if len(packetList) > 0 {
+				tl.account.Send(packetList...)
+				for _, p := range packetList {
+					p.Release()
 				}
-			}
-
-			if len(dataList) > 0 {
-				tl.account.Send(dataList...)
 			}
 		}()
 	}
