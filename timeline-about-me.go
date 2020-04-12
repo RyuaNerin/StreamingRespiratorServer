@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"sort"
+	"strconv"
 )
 
 func tlAboutMeGetUrl(cursor string) (method string, url string) {
@@ -57,8 +58,14 @@ func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList 
 		}
 	}
 
+	var maxPosition uint64 = 0
 	for _, activity := range activityList {
-		if activity.MaxPosition > cursor {
+		mp, err := strconv.ParseUint(activity.MaxPosition, 10, 64)
+		if err != nil {
+			continue
+		}
+		if mp > maxPosition {
+			maxPosition = mp
 			cursor = activity.MaxPosition
 		}
 	}

@@ -6,13 +6,13 @@ type TwitterDirectMessage struct {
 }
 
 type TwitterDirectMessageUserItem struct {
-	Cursor  string                 `json:"curosr"`
+	Cursor  string                 `json:"cursor"`
 	Users   map[string]TwitterUser `json:"users"`
 	Entries []*struct {
 		Message *struct {
 			Data struct {
 				Id          string `json:"id"`
-				Time        int64  `json:"time"` // Milliseconds
+				Time        string `json:"time"` // Milliseconds
 				RecipiendId string `json:"recipient_id"`
 				SenderId    string `json:"sender_id"`
 				Text        string `json:"text"`
