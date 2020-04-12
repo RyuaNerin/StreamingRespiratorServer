@@ -88,15 +88,8 @@ func (tl *TimeLine) update(ctx context.Context, method, url string, isFirstRefre
 	// Todo. user_modified
 	cursor, packetList, users := tl.funcMain(res.Body, isFirstRefresh)
 
-	if !isFirstRefresh {
-		go func() {
-			if len(packetList) > 0 {
-				tl.account.Send(packetList...)
-				for _, p := range packetList {
-					p.Release()
-				}
-			}
-		}()
+	if !isFirstRefresh && len(packetList) > 0 {
+		go tl.account.Send(packetList...)
 	}
 
 	go tl.account.UserCache(users)

@@ -2,21 +2,9 @@ package main
 
 import (
 	"bytes"
-	"sync"
+	"io"
 
 	jsoniter "github.com/json-iterator/go"
-)
-
-const (
-	DefaultPakcetBufferSize = 16 * 1024 // 16 k
-)
-
-var (
-	PacketPool = sync.Pool{
-		New: func() interface{} {
-			return bytes.NewBuffer(make([]byte, DefaultPakcetBufferSize))
-		},
-	}
 )
 
 type Packet struct {
@@ -24,17 +12,35 @@ type Packet struct {
 	b *bytes.Buffer
 }
 
-func NewPacket(v interface{}) (p Packet, ok bool) {
-	b := PacketPool.Get().(*bytes.Buffer)
+var (
+	crLf = []byte("\r\n")
+)
 
-	if err := jsoniter.NewEncoder(b).Encode(v); err != nil {
-		return Packet{b.Bytes(), b}, true
+func newPacket(v interface{}) (p Packet, ok bool) {
+	b := BytesPool.Get().(*bytes.Buffer)
+	b.Reset()
+
+	if err := jsoniter.NewEncoder(b).Encode(v); err != nil && err != io.EOF {
+		BytesPool.Put(b)
+		return p, false
 	}
+	b.Write(crLf)
 
-	PacketPool.Put(b)
-	return p, false
+	return Packet{b.Bytes(), b}, true
+}
+func newPacketFromReader(r io.Reader) (p Packet, ok bool) {
+	b := BytesPool.Get().(*bytes.Buffer)
+	b.Reset()
+
+	if _, err := io.Copy(b, r); err == nil || err == io.EOF {
+		BytesPool.Put(b)
+		return p, false
+	}
+	b.Write(crLf)
+
+	return Packet{b.Bytes(), b}, true
 }
 
 func (p *Packet) Release() {
-	PacketPool.Put(p.b)
+	BytesPool.Put(p.b)
 }

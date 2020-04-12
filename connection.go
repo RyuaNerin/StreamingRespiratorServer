@@ -7,8 +7,7 @@ import (
 )
 
 const (
-	KeepAlivePeriod      = 5 * time.Second
-	FriendsRefreshPeriod = 30 * time.Minute
+	KeepAlivePeriod = 5 * time.Second
 )
 
 var (

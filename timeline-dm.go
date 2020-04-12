@@ -75,7 +75,7 @@ func tlDMMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Pac
 				return packetJsonList[i].Item.Id < packetJsonList[k].Item.Id
 			})
 			for _, packetJson := range packetJsonList {
-				if packet, ok := NewPacket(&packetJson); ok {
+				if packet, ok := newPacket(&packetJson); ok {
 					packetList = append(packetList, packet)
 				}
 			}

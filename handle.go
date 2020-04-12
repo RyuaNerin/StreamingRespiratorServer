@@ -2,56 +2,80 @@ package main
 
 import (
 	"net/http"
-
-	"github.com/elazarl/goproxy"
+	"regexp"
+	"strconv"
+	"strings"
 )
 
-func CheckAuth(handler http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, pw, ok := r.BasicAuth()
-		if !ok {
-			w.WriteHeader(http.StatusProxyAuthRequired)
-			w.Header().Set("Proxy-Authenticate", "Basic realm=\"Access to Streamning-Respirator\"")
-			return
-		}
-		if id != authId || pw != authPw {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		handler.ServeHTTP(w, r)
-	})
-}
-func ProxyAuth(handler func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response)) func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	return func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		id, pw, ok := req.BasicAuth()
-		if !ok {
-			resp := &http.Response{
-				Request:          req,
-				TransferEncoding: req.TransferEncoding,
-				StatusCode:       http.StatusProxyAuthRequired,
-				Status:           http.StatusText(http.StatusProxyAuthRequired),
-				Header: http.Header{
-					"Proxy-Authenticate": []string{"Basic realm=\"Access to Streamning-Respirator\""},
-				},
-				ContentLength: 0,
-			}
-			return req, resp
-		}
-		if id != authId || pw != authPw {
-			resp := &http.Response{
-				Request:          req,
-				TransferEncoding: req.TransferEncoding,
-				StatusCode:       http.StatusUnauthorized,
-				Status:           http.StatusText(http.StatusUnauthorized),
-				Header: http.Header{
-					"Proxy-Authenticate": []string{"Basic realm=\"Access to Streamning-Respirator\""},
-				},
-				ContentLength: 0,
-			}
-			return req, resp
-		}
-
-		return handler(req, ctx)
+func parseJsonId(path string) (uint64, bool) {
+	n := strings.LastIndexByte(path, '/')
+	if n == -1 || n+1 <= len(path) {
+		return 0, false
 	}
+	path = path[n+1:]
+
+	n = strings.IndexByte(path, '.')
+	if n == -1 {
+		return 0, false
+	}
+	path = path[:n]
+
+	v, err := strconv.ParseUint(path, 10, 64)
+	return v, err == nil
+}
+
+func getTwitterClient(req *http.Request, isHttpServer bool) (act *Account, ok bool) {
+	id, ok := parseOwnerId(req, isHttpServer)
+	if ok {
+		for _, account := range Config.Accounts {
+			if account.Id == id {
+				return account, true
+			}
+		}
+	}
+
+	return
+}
+
+var (
+	reParseOwnerIdFull = regexp.MustCompile(`oauth_token="?([0-9]+)\-`)
+	reParseOwnerId     = regexp.MustCompile(`^([0-9]+)\-`)
+)
+
+func parseOwnerId(req *http.Request, isHttpServer bool) (id uint64, ok bool) {
+	if isHttpServer {
+		if i, err := strconv.ParseUint(req.URL.Query().Get("id"), 10, 64); err == nil {
+			return i, true
+		}
+	} else {
+		parse := func(v string, fullParse bool) (id uint64, ok bool) {
+			var m [][]string
+			if fullParse {
+				m = reParseOwnerIdFull.FindAllStringSubmatch(v, 1)
+			} else {
+				m = reParseOwnerId.FindAllStringSubmatch(v, 1)
+			}
+			if len(m) == 0 {
+				return
+			}
+
+			i, err := strconv.ParseUint(m[0][1], 10, 64)
+			if err != nil {
+				return
+			}
+			return i, true
+		}
+
+		if id, ok = parse(req.Header.Get("Authorization"), true); ok {
+			return
+		}
+		if id, ok = parse(req.FormValue("oauth_token"), false); ok {
+			return
+		}
+		if id, ok = parse(req.PostFormValue("oauth_token"), false); ok {
+			return
+		}
+	}
+
+	return 0, false
 }

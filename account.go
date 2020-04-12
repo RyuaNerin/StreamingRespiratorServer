@@ -5,14 +5,19 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/spf13/cast"
 )
 
 const (
-	MaxUserCacheCount = 500
+	MaxUserCacheCount       = 500
+	FriendsRefreshPeriod    = 30 * time.Minute
+	VerifyCredentialExpires = time.Minute
 )
 
 type Account struct {
@@ -34,6 +39,10 @@ type Account struct {
 
 	userCacheLock sync.Mutex
 	userCache     []userCache
+
+	verifiedLock   sync.Mutex
+	verifiedAt     time.Time
+	verifiedResult bool
 }
 
 type userCache struct {
@@ -65,14 +74,64 @@ func (act *Account) Init() {
 	act.userCache = make([]userCache, 0, MaxUserCacheCount)
 
 	// 타임라인 초기화
+	act.tlHome = TimeLine{
+		account:    act,
+		funcGetUrl: tlHomeGetUrl,
+		funcMain:   tlHomeMain,
+	}
+	act.tlAboutMe = TimeLine{
+		account:    act,
+		funcGetUrl: tlAboutMeGetUrl,
+		funcMain:   tlAboutMeMain,
+	}
+	act.tlDm = TimeLine{
+		account:    act,
+		funcGetUrl: tlDMGetUrl,
+		funcMain:   tlDMMain,
+	}
+}
+
+func (act *Account) VerifyCredentials() bool {
+	act.onceInit.Do(act.Init)
+
+	act.verifiedLock.Lock()
+	defer act.verifiedLock.Unlock()
+
+	if time.Now().Before(act.verifiedAt.Add(VerifyCredentialExpires)) {
+		return act.verifiedResult
+	}
+
+	for i := 0; i < 3; i++ {
+		req, _ := act.CreateRequest("GET", "https://api.twitter.com/1.1/account/verify_credentials.json", nil)
+		res, err := act.httpClient.Do(req)
+		if err == nil {
+			res.Body.Close()
+
+			if res.StatusCode == http.StatusOK {
+				act.verifiedAt = time.Now()
+				act.verifiedResult = true
+				return true
+			}
+		}
+
+		time.Sleep(3 * time.Second)
+	}
+
+	act.verifiedAt = time.Now()
+	act.verifiedResult = false
+	return false
 }
 
 func (act *Account) AddConnectionAndWait(w io.Writer) {
+	act.onceInit.Do(act.Init)
+
 	conn := Connection{
 		w:    w,
 		wait: make(chan struct{}),
 		data: make(chan []byte),
 	}
+
+	//////////////////////////////////////////////////
 
 	act.connectionsLock.Lock()
 	if act.connections.Len() == 0 {
@@ -85,8 +144,50 @@ func (act *Account) AddConnectionAndWait(w io.Writer) {
 	)
 	act.connectionsLock.Unlock()
 
+	//////////////////////////////////////////////////
+
 	go conn.Broadcaster()
+
+	// Friends 날린다
+	var tmrWorking int32 = 0
+	var tmrFriends *time.Timer
+
+	var sendFriends func()
+	sendFriends = func() {
+		if atomic.LoadInt32(&tmrWorking) != 0 {
+			return
+		}
+
+		req, _ := act.CreateRequest("GET", "https://api.twitter.com/1.1/friends/ids.json?count=5000user_id="+strconv.FormatUint(act.Id, 10), nil)
+		res, err := act.httpClient.Do(req)
+		if err == nil {
+			defer res.Body.Close()
+
+			var friendsCursor struct {
+				Ids []uint64 `json:"ids"`
+			}
+			if err = jsoniter.NewDecoder(res.Body).Decode(&friendsCursor); err == nil {
+				packetJson := PacketFriends{
+					Friends: friendsCursor.Ids,
+				}
+				if packet, ok := newPacket(&packetJson); ok {
+					conn.Send(packet.d)
+				}
+			}
+		}
+
+		tmrFriends = time.AfterFunc(FriendsRefreshPeriod, sendFriends)
+	}
+	sendFriends()
+
+	//////////////////////////////////////////////////
+
 	<-conn.wait
+
+	atomic.StoreInt32(&tmrWorking, 1)
+	tmrFriends.Stop()
+
+	//////////////////////////////////////////////////
 
 	act.connectionsLock.Lock()
 	act.connections.Remove(connNode)
@@ -127,6 +228,7 @@ func (act *Account) CreateRequest(method string, url string, body io.Reader) (*h
 	return req, nil
 }
 
+// 전달된 패킷은 전송 후 Release 됨.
 func (act *Account) Send(packetList ...Packet) {
 	act.onceInit.Do(act.Init)
 
@@ -156,9 +258,33 @@ func (act *Account) Send(packetList ...Packet) {
 	}
 
 	wg.Wait()
+
+	for _, packet := range packetList {
+		packet.Release()
+	}
+}
+
+func (act *Account) GetUserCache(findId uint64, findScreenName string) (id uint64, ScreenName string, ok bool) {
+	act.onceInit.Do(act.Init)
+
+	act.userCacheLock.Lock()
+	defer act.userCacheLock.Unlock()
+
+	for _, uc := range act.userCache {
+		if findId != 0 && uc.id == findId {
+			return uc.id, uc.screenName, true
+		}
+		if findScreenName != "" && uc.screenName == findScreenName {
+			return uc.id, uc.screenName, true
+		}
+	}
+
+	return
 }
 
 func (act *Account) UserCache(users map[uint64]TwitterUser) {
+	act.onceInit.Do(act.Init)
+
 	act.userCacheLock.Lock()
 	defer act.userCacheLock.Unlock()
 
@@ -198,9 +324,8 @@ func (act *Account) UserCache(users map[uint64]TwitterUser) {
 							Source:    user,
 							Target:    user,
 						}
-						if packet, ok := NewPacket(&packetJson); ok {
+						if packet, ok := newPacket(&packetJson); ok {
 							act.Send(packet)
-							packet.Release()
 						}
 					}()
 				}

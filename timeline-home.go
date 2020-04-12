@@ -39,7 +39,7 @@ func tlHomeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []P
 
 		sort.Sort(&statusList)
 		for status := range statusList {
-			if p, ok := NewPacket(&status); ok {
+			if p, ok := newPacket(&status); ok {
 				packetList = append(packetList, p)
 			}
 		}
