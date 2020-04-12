@@ -44,11 +44,16 @@ func tlDMMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Pac
 
 			for _, entry := range data.Entries {
 				if entry.Message != nil {
+					id, err := strconv.ParseUint(entry.Message.Data.Id, 10, 64)
+					if err != nil {
+						continue
+					}
+
 					// ToPacket
 					packetJson := PacketDirectMessage{
 						Item: PacketDirectMessageItem{
-							Id:        entry.Message.Data.Id,
-							IdStr:     strconv.FormatUint(entry.Message.Data.Id, 10),
+							Id:        id,
+							IdStr:     entry.Message.Data.Id,
 							CreatedAt: time.Unix(entry.Message.Data.Time/1000, entry.Message.Data.Time%1000),
 							Recipient: data.Users[entry.Message.Data.RecipiendId],
 							Sender:    data.Users[entry.Message.Data.SenderId],
