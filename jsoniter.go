@@ -2,14 +2,9 @@ package main
 
 import (
 	"time"
-	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
-)
-
-const (
-	// ddd MMM dd HH:mm:ss +ffff yyyy
-	RFC2822 = "Mon Jan 02 15:04:05 -0700 2006"
+	"github.com/modern-go/reflect2"
 )
 
 var (
@@ -21,24 +16,37 @@ func init() {
 		EscapeHTML: false,
 	}.Froze()
 
-	jsonTwitter.RegisterExtension(new(JsoniterStringEscapeExtension))
+	jsonTwitter.RegisterExtension(new(jsoniterExtension))
+}
 
-	jsoniter.RegisterTypeDecoderFunc(
-		"time.Time",
-		func(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
-			t, err := time.ParseInLocation(RFC2822, iter.ReadString(), time.UTC)
-			if err != nil {
-				iter.Error = err
-				return
-			}
-			*((*time.Time)(ptr)) = t
-		},
-	)
-	jsoniter.RegisterTypeEncoderFunc(
-		"time.Time",
-		func(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-			stream.WriteString((*(*time.Time)(ptr)).Format(RFC2822))
-		},
-		nil,
-	)
+type jsoniterExtension struct {
+	jsoniter.DummyExtension
+}
+
+var (
+	reflectTypeString    = reflect2.TypeOfPtr((*string)(nil)).Elem()
+	reflectTypeTime      = reflect2.TypeOfPtr((*time.Time)(nil)).Elem()
+	reflectTypeInterface = reflect2.TypeOfPtr((*interface{})(nil)).Elem()
+)
+
+func (ext jsoniterExtension) CreateEncoder(typ reflect2.Type) jsoniter.ValEncoder {
+	switch typ {
+	case reflectTypeString:
+		return new(jsoniterStringEnc)
+	case reflectTypeTime:
+		return new(jsoniterTimeEncDec)
+	}
+
+	return nil
+}
+func (ext jsoniterExtension) CreateDecoder(typ reflect2.Type) jsoniter.ValDecoder {
+	switch typ {
+	case reflectTypeTime:
+		return new(jsoniterTimeEncDec)
+
+	case reflectTypeInterface:
+		return new(jsoniterNumberDec)
+	}
+
+	return nil
 }
