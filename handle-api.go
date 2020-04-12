@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/spf13/cast"
 )
 
@@ -103,7 +102,7 @@ func sendStatusRemovedWithCheck(act *Account, id uint64) {
 	var v struct {
 		Id uint64 `json:"id"`
 	}
-	if err := jsoniter.NewDecoder(res.Body).Decode(&v); err != nil && err != io.EOF {
+	if err := jsonTwitter.NewDecoder(res.Body).Decode(&v); err != nil && err != io.EOF {
 		return
 	}
 
@@ -244,7 +243,7 @@ func getUserId(act *Account, screenName string) (userId uint64, ok bool) {
 	var tu struct {
 		Id uint64 `json:"id"`
 	}
-	if err := jsoniter.NewDecoder(resp.Body).Decode(&tu); err != nil && err != io.EOF {
+	if err := jsonTwitter.NewDecoder(resp.Body).Decode(&tu); err != nil && err != io.EOF {
 		return
 	}
 
@@ -261,7 +260,7 @@ func sendDirectMessage(act *Account, req *http.Request, userId uint64, screenNam
 	defer BytesPool.Put(buffRequest)
 	buffRequest.Reset()
 
-	if err := jsoniter.NewEncoder(buffRequest).Encode(&dmData); err != nil && err != io.EOF {
+	if err := jsonTwitter.NewEncoder(buffRequest).Encode(&dmData); err != nil && err != io.EOF {
 		return newResponse(req, http.StatusInternalServerError)
 	}
 
@@ -316,7 +315,7 @@ func tunnelAndGetResponse(act *Account, req *http.Request, v interface{}) (resp 
 	resp = newResponseFromResponse(req, resp, buff)
 
 	if v == nil {
-		if err = jsoniter.NewDecoder(bytes.NewReader(buff.Bytes())).Decode(&v); err == nil || err == io.EOF {
+		if err = jsonTwitter.NewDecoder(bytes.NewReader(buff.Bytes())).Decode(&v); err == nil || err == io.EOF {
 			vOk = true
 		}
 	}

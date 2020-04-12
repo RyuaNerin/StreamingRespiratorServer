@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/spf13/cast"
 )
 
@@ -25,7 +24,7 @@ func tlDMGetUrl(cursor string) (method string, url string) {
 func tlDMMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser) {
 	var directMessage TwitterDirectMessage
 
-	if err := jsoniter.NewDecoder(r).Decode(&directMessage); err != nil && err != io.EOF {
+	if err := jsonTwitter.NewDecoder(r).Decode(&directMessage); err != nil && err != io.EOF {
 		return
 	}
 

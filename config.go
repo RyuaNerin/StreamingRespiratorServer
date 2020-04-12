@@ -4,8 +4,6 @@ import (
 	"io"
 	"os"
 	"syscall"
-
-	jsoniter "github.com/json-iterator/go"
 )
 
 var Config struct {
@@ -41,7 +39,7 @@ func loadConfig(path string) {
 		}
 	}
 
-	err = jsoniter.NewDecoder(fs).Decode(&Config)
+	err = jsonTwitter.NewDecoder(fs).Decode(&Config)
 	if err != nil && err != io.EOF {
 		panic(err)
 	}

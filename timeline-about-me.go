@@ -4,8 +4,6 @@ import (
 	"io"
 	"sort"
 	"strconv"
-
-	jsoniter "github.com/json-iterator/go"
 )
 
 func tlAboutMeGetUrl(cursor string) (method string, url string) {
@@ -22,7 +20,7 @@ func tlAboutMeGetUrl(cursor string) (method string, url string) {
 
 func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser) {
 	var activityList []TwitterActivity
-	if err := jsoniter.NewDecoder(r).Decode(&activityList); err != nil && err != io.EOF {
+	if err := jsonTwitter.NewDecoder(r).Decode(&activityList); err != nil && err != io.EOF {
 		return
 	}
 	if len(activityList) == 0 {
@@ -52,7 +50,7 @@ func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList 
 		}
 
 		sort.Sort(&statusList)
-		for status := range statusList {
+		for _, status := range statusList {
 			if p, ok := newPacket(&status); ok {
 				packetList = append(packetList, p)
 			}

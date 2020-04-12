@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"io"
-
-	jsoniter "github.com/json-iterator/go"
 )
 
 type Packet struct {
@@ -20,7 +18,7 @@ func newPacket(v interface{}) (p Packet, ok bool) {
 	b := BytesPool.Get().(*bytes.Buffer)
 	b.Reset()
 
-	if err := jsoniter.NewEncoder(b).Encode(v); err != nil && err != io.EOF {
+	if err := jsonTwitter.NewEncoder(b).Encode(v); err != nil && err != io.EOF {
 		BytesPool.Put(b)
 		return p, false
 	}

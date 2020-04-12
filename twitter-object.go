@@ -1,6 +1,8 @@
 package main
 
-import "github.com/spf13/cast"
+import (
+	"github.com/spf13/cast"
+)
 
 type TwitterStatusList []TwitterStatus
 type TwitterStatus map[string]interface{}

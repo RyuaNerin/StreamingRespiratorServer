@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/spf13/cast"
 )
 
@@ -167,7 +166,7 @@ func (act *Account) AddConnectionAndWait(w io.Writer) {
 			var friendsCursor struct {
 				Ids []uint64 `json:"ids"`
 			}
-			if err = jsoniter.NewDecoder(res.Body).Decode(&friendsCursor); err == nil {
+			if err = jsonTwitter.NewDecoder(res.Body).Decode(&friendsCursor); err == nil {
 				packetJson := PacketFriends{
 					Friends: friendsCursor.Ids,
 				}

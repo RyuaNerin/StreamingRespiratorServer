@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strconv"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/spf13/cast"
 )
 
@@ -23,7 +22,7 @@ func tlHomeGetUrl(cursor string) (method string, url string) {
 
 func tlHomeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser) {
 	var statusList TwitterStatusList
-	if err := jsoniter.NewDecoder(r).Decode(&statusList); err != nil && err != io.EOF {
+	if err := jsonTwitter.NewDecoder(r).Decode(&statusList); err != nil && err != io.EOF {
 		logger.Printf("%+v\n", err)
 		return
 	}
@@ -39,7 +38,7 @@ func tlHomeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []P
 		}
 
 		sort.Sort(&statusList)
-		for status := range statusList {
+		for _, status := range statusList {
 			if p, ok := newPacket(&status); ok {
 				packetList = append(packetList, p)
 			}
