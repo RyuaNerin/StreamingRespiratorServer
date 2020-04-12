@@ -85,6 +85,7 @@ func (tl *TimeLine) update(ctx context.Context, method, url string, isFirstRefre
 	if err != nil {
 		return "", TLWaitError
 	}
+	defer res.Body.Close()
 
 	// Todo. user_modified
 	if res.StatusCode == http.StatusOK {

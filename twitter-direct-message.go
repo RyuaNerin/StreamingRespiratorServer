@@ -1,8 +1,8 @@
 package main
 
 type TwitterDirectMessage struct {
-	UserInbox  *TwitterDirectMessageUserItem `json:"user_inbox"`
-	UserEvents *TwitterDirectMessageUserItem `json:"user_events"`
+	UserInbox  *TwitterDirectMessageUserItem `json:"user_inbox,omitempty"`
+	UserEvents *TwitterDirectMessageUserItem `json:"user_events,omitempty"`
 }
 
 type TwitterDirectMessageUserItem struct {

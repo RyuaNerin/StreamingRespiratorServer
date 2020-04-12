@@ -23,8 +23,8 @@ func tlDMGetUrl(cursor string) (method string, url string) {
 
 func tlDMMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser) {
 	var directMessage TwitterDirectMessage
-
 	if err := jsonTwitter.NewDecoder(r).Decode(&directMessage); err != nil && err != io.EOF {
+		logger.Printf("%+v\n", err)
 		return
 	}
 
@@ -82,37 +82,6 @@ func tlDMMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Pac
 	}
 
 	cursor = data.Cursor
-
-	/**
-	if (isNotFirstRefresh)
-	{
-		if (data?.Items?.Entries != null)
-		{
-			foreach (var item in data.Items.Entries.Where(e => e.Message != null))
-			{
-				try
-				{
-					lstItems.Add(ToPacket(data, item));
-				}
-				catch
-				{
-				}
-			}
-
-			lstItems.Sort((a, b) => a.Item.Id.CompareTo(b.Item.Id));
-		}
-
-		if (data?.Items?.Users != null)
-		{
-			foreach (var user in data.Items.Users.Values)
-			{
-				lstUsers.Add(user);
-			}
-		}
-	}
-
-	return data?.Items?.Cursor;
-	*/
 
 	return
 }

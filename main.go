@@ -120,7 +120,7 @@ func main() {
 
 	if *argHttp != "" {
 		server := http.Server{
-			Handler:  newHttpMux(false),
+			Handler:  newHttpMux(true),
 			ErrorLog: logger,
 		}
 

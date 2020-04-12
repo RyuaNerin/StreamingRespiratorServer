@@ -84,7 +84,7 @@ func proxyAuth(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.R
 func newProxyResponseUnauthorized(req *http.Request, statusCode int) *http.Response {
 	res := newResponse(req, statusCode)
 	res.Header = http.Header{
-		"Proxy-Authenticate": []string{"Basic realm=\"Access to Streamning-Respirator\""},
+		"Proxy-Authenticate": []string{AuthenticateHeaderValue},
 		"Proxy-Connection":   []string{"close"},
 	}
 	return res

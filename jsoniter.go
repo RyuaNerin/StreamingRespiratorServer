@@ -21,6 +21,8 @@ func init() {
 		EscapeHTML: false,
 	}.Froze()
 
+	jsonTwitter.RegisterExtension(new(JsoniterStringEscapeExtension))
+
 	jsoniter.RegisterTypeDecoderFunc(
 		"time.Time",
 		func(ptr unsafe.Pointer, iter *jsoniter.Iterator) {

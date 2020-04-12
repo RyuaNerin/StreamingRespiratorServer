@@ -6,6 +6,10 @@ import (
 	"net/http"
 )
 
+const (
+	AuthenticateHeaderValue = "Basic realm=\"Access to Streaming-Respirator\""
+)
+
 func newResponse(req *http.Request, statusCode int) *http.Response {
 	return &http.Response{
 		Status:           http.StatusText(statusCode),

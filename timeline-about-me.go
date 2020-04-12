@@ -21,6 +21,7 @@ func tlAboutMeGetUrl(cursor string) (method string, url string) {
 func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser) {
 	var activityList []TwitterActivity
 	if err := jsonTwitter.NewDecoder(r).Decode(&activityList); err != nil && err != io.EOF {
+		logger.Printf("%+v\n", err)
 		return
 	}
 	if len(activityList) == 0 {

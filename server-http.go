@@ -10,9 +10,7 @@ func newHttpMux(withAuth bool) http.Handler {
 
 	var auth func(http.Handler) http.Handler
 	if withAuth {
-		auth = func(handler http.Handler) http.Handler {
-			return checkAuth(handler)
-		}
+		auth = checkAuth
 	} else {
 		auth = func(handler http.Handler) http.Handler {
 			return handler
@@ -46,8 +44,8 @@ func checkAuth(handler http.Handler) http.Handler {
 		if !ok || id != authId || pw != authPw {
 			id, pw, ok = req.BasicAuth()
 			if !ok || id != authId || pw != authPw {
+				w.Header().Set("WWW-Authenticate", AuthenticateHeaderValue)
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Header().Set("Authenticate", "Basic realm=\"Access to Streamning-Respirator\"")
 				return
 			}
 		}
