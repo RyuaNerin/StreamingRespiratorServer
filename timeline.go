@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -86,13 +87,16 @@ func (tl *TimeLine) update(ctx context.Context, method, url string, isFirstRefre
 	}
 
 	// Todo. user_modified
-	cursor, packetList, users := tl.funcMain(res.Body, isFirstRefresh)
+	if res.StatusCode == http.StatusOK {
+		cursor, packetList, users := tl.funcMain(res.Body, isFirstRefresh)
+		cursorNew = cursor
 
-	if !isFirstRefresh && len(packetList) > 0 {
-		go tl.account.Send(packetList...)
+		if !isFirstRefresh && len(packetList) > 0 {
+			go tl.account.Send(packetList...)
+		}
+
+		go tl.account.UserCache(users)
 	}
-
-	go tl.account.UserCache(users)
 
 	wait = TLWaitError
 	if remaining, err := strconv.ParseInt(res.Header.Get("x-rate-limit-remaining"), 10, 64); err == nil {
@@ -120,5 +124,5 @@ func (tl *TimeLine) update(ctx context.Context, method, url string, isFirstRefre
 		wait = TLWaitMin
 	}
 
-	return cursor, wait
+	return
 }

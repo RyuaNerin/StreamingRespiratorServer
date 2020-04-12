@@ -19,7 +19,8 @@
 |`-unix (VAL)`||유닉스 소켓에 바인딩합니다. plain 으로 제공합니다.|
 |`-unix-perm (VAL)`||`-unix` 옵션 사용 시 유닉스 소켓의 퍼미션을 설정합니다. 기본값은 `0700` 입니다|
 |`-verbose`||자세한 로그를 출력합니다.|
-|`-debug`||디버그 모드입니다|
+|`-debug`||디버그 모드를 켭니다|
+|`-client-http-proxy (VAL)`||내부 HTTP Client 에서 사용할 프록시입니다.|
 
 |상황|옵션|
 |----|-|
@@ -40,12 +41,27 @@
 - 아래 두 연결을 사용할 때 스트리밍 호흡기의 포트에 맞게 proxy 설정을 해주세요.
     - `https://streaming.twitter.com`
     - `https://api.twitter.com`
-- HTTP 표준에 따라 `Proxy-Authorization` 헤더를 설정해주어야 합니다.
-- 인증 방식 : `Basic`
+- `Proxy-Authorization` 헤더를 설정해주어야 합니다.
+    - 인증 방식 : `Basic`
+    - `Proxy-Authorization: Basic <credentials>`
+        - `<credentials>` : base64(`"<id>:<pw>"`)
 
 ### HTTP / Unix
 
-- `https://<host>:<port>/?id=<user_id>`
-- Min Versino : `TLSv1.2`
-- HTTP 표준에 따라 `Authorization` 헤더를 설정해주어야 합니다.
-- 인증 방식 : `Basic`
+- 스트리밍 호흡기 연결
+    - `https://<host>:<port>/?id=<user_id>`
+    - Min Versino : `TLSv1.2`
+    - HTTP 표준에 따라 `Authorization` 헤더를 설정해주어야 합니다.
+    - 인증 방식 : `Basic`
+
+- HTTP 프록시 모드
+    - `https://userstream.twitter.com/A/B/C` →
+        - `http://<host>:<port>/userstream.twitter.com/A/B/C`
+        - `https://<host>:<port>/userstream.twitter.com/A/B/C`
+    - `https://api.twitter.com/A/B/C` →
+        - `http://<host>:<port>/api.twitter.com/A/B/C`
+        - `https://<host>:<port>/api.twitter.com/A/B/C`
+    - `Proxy-Authorization` 헤더를 설정해주어야 합니다.
+        - 인증 방식 : `Basic`
+        - `Proxy-Authorization: Basic <credentials>`
+            - `<credentials>` : base64(`"<id>:<pw>"`)

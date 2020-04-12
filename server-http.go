@@ -3,7 +3,6 @@ package main
 import (
 	"io"
 	"net/http"
-	"net/http/httputil"
 )
 
 func newHttpMux(withAuth bool) http.Handler {
@@ -82,11 +81,12 @@ func writeResponseToWriter(resp *http.Response, w http.ResponseWriter, chunked b
 
 	w.WriteHeader(resp.StatusCode)
 
-	var wr io.Writer = w
-	if chunked {
-		wr = httputil.NewChunkedWriter(w)
+	if !chunked {
+		io.Copy(w, resp.Body)
+	} else {
+		f, fok := w.(http.Flusher)
 
-		if f, ok := w.(http.Flusher); ok {
+		if fok {
 			f.Flush()
 		}
 
@@ -96,6 +96,26 @@ func writeResponseToWriter(resp *http.Response, w http.ResponseWriter, chunked b
 				resp.Body.Close()
 			}()
 		}
+
+		buff := make([]byte, 16*1024)
+		for {
+			nr, er := resp.Body.Read(buff)
+			if nr > 0 {
+				nw, ew := w.Write(buff[0:nr])
+				if ew != nil {
+					break
+				}
+				if nr != nw {
+					break
+				}
+
+				if fok {
+					f.Flush()
+				}
+			}
+			if er != nil {
+				break
+			}
+		}
 	}
-	io.Copy(wr, resp.Body)
 }

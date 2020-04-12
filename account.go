@@ -66,6 +66,7 @@ var (
 func (act *Account) Init() {
 	act.httpClient.Transport = &http.Transport{
 		MaxIdleConnsPerHost: 32,
+		Proxy:               proxy,
 	}
 
 	act.cookieXCsrfToken = regExtractXCsrfToken.FindStringSubmatch(act.Cookie)[1]

@@ -24,12 +24,12 @@ func (ts TwitterStatus) AddUserToMap(users map[uint64]TwitterUser) {
 		}
 	}
 
-	if retweetedStatus := TwitterStatus(cast.ToStringMap(ts["retweeted_status"])); retweetedStatus != nil {
-		retweetedStatus.AddUserToMap(users)
+	if retweetedStatus, err := cast.ToStringMapE(ts["retweeted_status"]); err == nil {
+		TwitterStatus(retweetedStatus).AddUserToMap(users)
 	}
 
-	if quotedStatus := TwitterStatus(cast.ToStringMap(ts["quoted_status"])); quotedStatus != nil {
-		quotedStatus.AddUserToMap(users)
+	if quotedStatus, err := cast.ToStringMapE(ts["quoted_status"]); err == nil {
+		TwitterStatus(quotedStatus).AddUserToMap(users)
 	}
 }
 

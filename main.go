@@ -8,9 +8,11 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"golang.org/x/net/http2"
 )
@@ -21,6 +23,8 @@ var (
 
 	verbose bool
 	logger  *log.Logger
+
+	proxy func(*http.Request) (*url.URL, error)
 )
 
 func main() {
@@ -41,6 +45,8 @@ func main() {
 	argUnixPerm := flag.Int("unix-perm", 0700, "")
 
 	argDebug := flag.Bool("debug", false, "")
+
+	argClientHttpProxy := flag.String("client-http-proxy", "", "")
 	flag.Parse()
 
 	if *argConfig == "" || authId == "" || authPw == "" {
@@ -48,6 +54,15 @@ func main() {
 	}
 	if *argProxy == "" && *argHttp == "" && *argUnix == "" {
 		return
+	}
+
+	if *argClientHttpProxy != "" {
+		u, _ := url.Parse("http://" + *argClientHttpProxy)
+
+		if sock, err := net.DialTimeout("tcp", *argClientHttpProxy, time.Second); err == nil {
+			sock.Close()
+			proxy = http.ProxyURL(u)
+		}
 	}
 
 	if *argDebug {

@@ -16,7 +16,8 @@
                 "-http"     , "127.0.0.1:18812",
                 "-http-plain",
                 "-verbose",
-                "-debug"
+                "-debug",
+                "-client-http-proxy", "127.0.0.1:58461"
             ]
         }
     ]
