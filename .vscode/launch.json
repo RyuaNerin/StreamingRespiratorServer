@@ -14,7 +14,6 @@
                 "-pw"       , "123",
                 "-proxy"    , "127.0.0.1:18811",
                 "-http"     , "127.0.0.1:18812",
-                "-http-plain",
                 "-verbose",
                 "-debug",
                 "-client-http-proxy", "127.0.0.1:58461"

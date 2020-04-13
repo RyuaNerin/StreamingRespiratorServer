@@ -22,10 +22,7 @@ func handleStreaming(req *http.Request, isHttpServer bool) *http.Response {
 
 	r, w := io.Pipe()
 
-	go func() {
-		act.AddConnectionAndWait(w)
-		w.Close()
-	}()
+	go act.AddConnectionAndWait(w, req.Context())
 
 	resp := newResponse(req, http.StatusOK)
 	resp.Body = r

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 var (
@@ -37,7 +38,7 @@ func main() {
 	argProxy := flag.String("proxy", "", "")
 
 	argHttp := flag.String("http", "", "")
-	argHttpPlain := flag.Bool("http-plain", false, "")
+	//argHttpPlain := flag.Bool("http-plain", false, "")
 	argHttpCert := flag.String("http-cert", "", "")
 	argHttpKey := flag.String("http-key", "", "")
 
@@ -119,34 +120,31 @@ func main() {
 	}
 
 	if *argHttp != "" {
-		server := http.Server{
-			Handler:  newHttpMux(true),
-			ErrorLog: logger,
+		if *argHttpCert != "" || *argHttpKey != "" {
+			clientCert, err := tls.LoadX509KeyPair(*argHttpCert, *argHttpKey)
+			if err != nil {
+				panic(err)
+			}
+			tlsConfigHttp.Certificates = append(tlsConfigHttp.Certificates, clientCert)
 		}
+		tlsConfigHttp.BuildNameToCertificate()
+
+		var server2 http2.Server
+		server := http.Server{
+			Handler:   newHttpMux(true),
+			ErrorLog:  logger,
+			TLSConfig: &tlsConfigHttp,
+		}
+		http2.ConfigureServer(&server, &server2)
+		server.Handler = h2c.NewHandler(server.Handler, &server2)
 
 		l, err := net.Listen("tcp", *argHttp)
 		if err != nil {
 			panic(err)
 		}
+		l = newHyperListner(l, server.TLSConfig)
 
-		if *argHttpPlain == false {
-			tlsConfigHttp.BuildNameToCertificate()
-
-			if *argHttpCert != "" || *argHttpKey != "" {
-				clientCert, err := tls.LoadX509KeyPair(*argHttpCert, *argHttpKey)
-				if err != nil {
-					panic(err)
-				}
-				tlsConfigHttp.Certificates = append(tlsConfigHttp.Certificates, clientCert)
-			}
-			tlsConfigHttp.BuildNameToCertificate()
-
-			server.TLSConfig = &tlsConfigHttp
-			http2.ConfigureServer(&server, &http2.Server{})
-			go server.ServeTLS(l, "", "")
-		} else {
-			go server.Serve(l)
-		}
+		go server.Serve(l)
 
 		defer l.Close()
 	}

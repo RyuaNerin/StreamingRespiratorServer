@@ -2,6 +2,8 @@ package main
 
 import (
 	"container/list"
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -89,6 +91,12 @@ func (act *Account) Init() {
 		funcGetUrl: tlDMGetUrl,
 		funcMain:   tlDMMain,
 	}
+
+	if verbose {
+		act.tlHome.name = fmt.Sprintf("Home (@%s)", act.ScreenName)
+		act.tlAboutMe.name = fmt.Sprintf("AboutMe (@%s)", act.ScreenName)
+		act.tlDm.name = fmt.Sprintf("DM (@%s)", act.ScreenName)
+	}
 }
 
 func (act *Account) VerifyCredentials() bool {
@@ -122,14 +130,10 @@ func (act *Account) VerifyCredentials() bool {
 	return false
 }
 
-func (act *Account) AddConnectionAndWait(w io.Writer) {
+func (act *Account) AddConnectionAndWait(w io.WriteCloser, ctx context.Context) {
 	act.onceInit.Do(act.Init)
 
-	conn := Connection{
-		w:    w,
-		wait: make(chan struct{}),
-		data: make(chan []byte),
-	}
+	conn := newConnection(w, ctx)
 
 	//////////////////////////////////////////////////
 
@@ -139,9 +143,7 @@ func (act *Account) AddConnectionAndWait(w io.Writer) {
 		act.tlDm.Start()
 		act.tlHome.Start()
 	}
-	connNode := act.connections.PushBack(
-		&conn,
-	)
+	connNode := act.connections.PushBack(conn)
 	act.connectionsLock.Unlock()
 
 	//////////////////////////////////////////////////
@@ -159,6 +161,7 @@ func (act *Account) AddConnectionAndWait(w io.Writer) {
 		}
 
 		req, _ := act.CreateRequest("GET", "https://api.twitter.com/1.1/friends/ids.json?count=5000user_id="+strconv.FormatUint(act.Id, 10), nil)
+		req.WithContext(ctx)
 		res, err := act.httpClient.Do(req)
 		if err == nil {
 			defer res.Body.Close()
@@ -182,7 +185,12 @@ func (act *Account) AddConnectionAndWait(w io.Writer) {
 
 	//////////////////////////////////////////////////
 
-	<-conn.wait
+	select {
+	case <-ctx.Done():
+	case <-conn.done:
+	}
+
+	w.Close()
 
 	atomic.StoreInt32(&tmrWorking, 1)
 	tmrFriends.Stop()

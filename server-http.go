@@ -5,6 +5,22 @@ import (
 	"net/http"
 )
 
+type streamingRespiratorServer int
+
+func (s *streamingRespiratorServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "CONNECT" {
+		s.handleConnect(w, r)
+	} else {
+
+	}
+}
+func (s *streamingRespiratorServer) handleConnect(w http.ResponseWriter, r *http.Request) {
+
+}
+func (s *streamingRespiratorServer) handlePlain(w http.ResponseWriter, r *http.Request) {
+
+}
+
 func newHttpMux(withAuth bool) http.Handler {
 	mux := http.NewServeMux()
 
@@ -36,6 +52,10 @@ func newHttpMux(withAuth bool) http.Handler {
 			},
 		)
 	}
+}
+
+func handleCONNECT() {
+
 }
 
 func checkAuth(handler http.Handler) http.Handler {

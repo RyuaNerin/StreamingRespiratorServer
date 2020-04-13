@@ -20,6 +20,7 @@ type TimeLine struct {
 	runningLock      sync.Mutex
 	runningCtxCancel context.CancelFunc // 갱신 취소용 함수
 
+	name       string
 	funcGetUrl func(cursor string) (method string, url string) // cursor -> URL
 	funcMain   func(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Packet, users map[uint64]TwitterUser)
 }
@@ -31,6 +32,8 @@ func (tl *TimeLine) Start() {
 	if tl.runningCtxCancel != nil {
 		return
 	}
+
+	logger.Printf("Timeline Start : %s\n", tl.name)
 
 	ctx, ctxCacnel := context.WithCancel(context.Background())
 	tl.runningCtxCancel = ctxCacnel
@@ -45,6 +48,8 @@ func (tl *TimeLine) Stop() {
 	if tl.runningCtxCancel == nil {
 		return
 	}
+
+	logger.Printf("Timeline Stop : %s\n", tl.name)
 
 	tl.runningCtxCancel()
 	tl.runningCtxCancel = nil

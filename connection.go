@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"sync/atomic"
 	"time"
@@ -18,9 +19,20 @@ type Connection struct {
 	w      io.Writer
 	closed int32
 
-	wait chan struct{}
+	ctx context.Context
+
+	done chan struct{}
 
 	data chan []byte
+}
+
+func newConnection(w io.Writer, ctx context.Context) *Connection {
+	return &Connection{
+		w:    w,
+		ctx:  ctx,
+		done: make(chan struct{}),
+		data: make(chan []byte),
+	}
 }
 
 func (c *Connection) Send(data []byte) {
@@ -36,6 +48,9 @@ func (c *Connection) Broadcaster() {
 
 	for atomic.LoadInt32(&c.closed) == 0 {
 		select {
+		case <-c.ctx.Done():
+			break
+
 		case <-time.After(KeepAlivePeriod):
 			_, err = c.w.Write(KeepAliveData)
 
@@ -44,11 +59,12 @@ func (c *Connection) Broadcaster() {
 		}
 
 		if err != nil && err != io.EOF {
-			atomic.StoreInt32(&c.closed, 1)
 			break
 		}
 	}
+	atomic.StoreInt32(&c.closed, 1)
+
 	// 채널 비우기
 	close(c.data)
-	close(c.wait)
+	close(c.done)
 }
