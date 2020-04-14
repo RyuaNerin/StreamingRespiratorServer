@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"sync"
@@ -99,7 +100,7 @@ func (act *Account) Init() {
 	}
 }
 
-func (act *Account) VerifyCredentials() bool {
+func (act *Account) VerifyCredentials(ctx context.Context) bool {
 	act.onceInit.Do(act.Init)
 
 	act.verifiedLock.Lock()
@@ -110,7 +111,12 @@ func (act *Account) VerifyCredentials() bool {
 	}
 
 	for i := 0; i < 3; i++ {
-		req, _ := act.CreateRequest("GET", "https://api.twitter.com/1.1/account/verify_credentials.json", nil)
+		req, _ := act.CreateRequest(
+			context.Background(),
+			"GET",
+			"https://api.twitter.com/1.1/account/verify_credentials.json",
+			nil,
+		)
 		res, err := act.httpClient.Do(req)
 		if err == nil {
 			res.Body.Close()
@@ -130,7 +136,7 @@ func (act *Account) VerifyCredentials() bool {
 	return false
 }
 
-func (act *Account) AddConnectionAndWait(w io.WriteCloser, ctx context.Context) {
+func (act *Account) AddConnectionAndWait(w http.ResponseWriter, ctx context.Context) {
 	act.onceInit.Do(act.Init)
 
 	conn := newConnection(w, ctx)
@@ -148,8 +154,6 @@ func (act *Account) AddConnectionAndWait(w io.WriteCloser, ctx context.Context) 
 
 	//////////////////////////////////////////////////
 
-	go conn.Broadcaster()
-
 	// Friends 날린다
 	var tmrWorking int32 = 0
 	var tmrFriends *time.Timer
@@ -160,7 +164,12 @@ func (act *Account) AddConnectionAndWait(w io.WriteCloser, ctx context.Context) 
 			return
 		}
 
-		req, _ := act.CreateRequest("GET", "https://api.twitter.com/1.1/friends/ids.json?count=5000user_id="+strconv.FormatUint(act.Id, 10), nil)
+		req, _ := act.CreateRequest(
+			context.Background(),
+			"GET",
+			"https://api.twitter.com/1.1/friends/ids.json?count=5000user_id="+strconv.FormatUint(act.Id, 10),
+			nil,
+		)
 		req.WithContext(ctx)
 		res, err := act.httpClient.Do(req)
 		if err == nil {
@@ -187,10 +196,8 @@ func (act *Account) AddConnectionAndWait(w io.WriteCloser, ctx context.Context) 
 
 	select {
 	case <-ctx.Done():
-	case <-conn.done:
+	case <-conn.chanClosed:
 	}
-
-	w.Close()
 
 	atomic.StoreInt32(&tmrWorking, 1)
 	tmrFriends.Stop()
@@ -212,10 +219,10 @@ func (act *Account) AddConnectionAndWait(w io.WriteCloser, ctx context.Context) 
 	act.connectionsLock.Unlock()
 }
 
-func (act *Account) CreateRequest(method string, url string, body io.Reader) (*http.Request, error) {
+func (act *Account) CreateRequest(ctx context.Context, method string, url string, body io.Reader) (*http.Request, error) {
 	act.onceInit.Do(act.Init)
 
-	req, err := http.NewRequest(method, url, body)
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
@@ -270,6 +277,60 @@ func (act *Account) Send(packetList ...Packet) {
 	for _, packet := range packetList {
 		packet.Release()
 	}
+}
+
+func (act *Account) SendStatusRemoved(id uint64, userId uint64) {
+	var packetJson PacketDelete
+	packetJson.Delete.Status = PacketDeleteStatus{
+		Id:        id,
+		IdStr:     strconv.FormatUint(id, 10),
+		UserId:    userId,
+		UserIdStr: strconv.FormatUint(userId, 10),
+	}
+
+	if packet, ok := newPacket(&packetJson); ok {
+		act.Send(packet)
+	}
+}
+func (act *Account) sendStatusRemovedFromStatus(v TwitterStatus) {
+	id, err := cast.ToUint64E(v["id"])
+	if err == nil {
+		return
+	}
+	user, err := cast.ToStringMapE(v["user"])
+	if err != nil {
+		return
+	}
+	userId, err := cast.ToUint64E(user["id"])
+	if err != nil {
+		return
+	}
+
+	act.SendStatusRemoved(id, userId)
+}
+func (act *Account) SendStatusRemovedWithCheck(id uint64) {
+	req, _ := act.CreateRequest(
+		context.Background(),
+		"GET",
+		"https://api.twitter.com/1.1/statuses/show.json?id="+strconv.FormatUint(id, 10),
+		nil,
+	)
+
+	res, err := act.httpClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer res.Body.Close()
+
+	var v struct {
+		Id uint64 `json:"id"`
+	}
+	if err := jsonTwitter.NewDecoder(res.Body).Decode(&v); err != nil && err != io.EOF {
+		logger.Printf("%+v\n", err)
+		return
+	}
+
+	act.SendStatusRemoved(v.Id, 0)
 }
 
 func (act *Account) GetUserCache(findId uint64, findScreenName string) (id uint64, ScreenName string, ok bool) {
@@ -370,4 +431,34 @@ func (act *Account) UserCache(users map[uint64]TwitterUser) {
 			},
 		)
 	}
+}
+
+func (act *Account) GetUserId(ctx context.Context, screenName string) (userId uint64, ok bool) {
+	userId, _, ok = act.GetUserCache(0, screenName)
+	if ok {
+		return userId, true
+	}
+
+	req, _ := act.CreateRequest(
+		ctx,
+		"GET",
+		"https://api.twitter.com/1.1/users/show.json?screen_name="+url.QueryEscape(screenName),
+		nil,
+	)
+	resp, err := act.httpClient.Do(req)
+	if err != nil {
+		logger.Printf("%+v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	var tu struct {
+		Id uint64 `json:"id"`
+	}
+	if err := jsonTwitter.NewDecoder(resp.Body).Decode(&tu); err != nil && err != io.EOF {
+		logger.Printf("%+v\n", err)
+		return
+	}
+
+	return tu.Id, true
 }

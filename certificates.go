@@ -4,22 +4,44 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-
-	"gopkg.in/elazarl/goproxy.v1"
 )
 
 var (
-	certPool   = x509.NewCertPool()
-	certCA     *x509.Certificate
-	certClient tls.Certificate
+	tlsConfig = tls.Config{
+		MinVersion:       tls.VersionTLS12,
+		CurvePreferences: []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		CipherSuites: []uint16{
+			// TLS 1.0 - 1.2 cipher suites.
+			//tls.TLS_RSA_WITH_RC4_128_SHA,
+			//tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
+			tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			//tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+			//tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+			//tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
 
-	tlsConfigProxy = tls.Config{
-		MinVersion: tls.VersionTLS11,
-		NextProtos: []string{"http/1.1"},
-	}
-	tlsConfigHttp = tls.Config{
-		MinVersion: tls.VersionTLS11,
-		NextProtos: []string{"http/1.1"},
+			// TLS 1.3 cipher suites.
+			tls.TLS_AES_128_GCM_SHA256,
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
+		},
+		PreferServerCipherSuites: true,
+		NextProtos:               []string{"http/1.1"},
 	}
 )
 
@@ -109,23 +131,17 @@ p+wcGu4H7SqlQZI6JZbnYTyF5CPKuzcRcGfDbIp4z3EiV5lRmOdnBQ==
 	var err error
 
 	block, _ := pem.Decode([]byte(constCaCert))
-	if certCA, err = x509.ParseCertificate(block.Bytes); err != nil {
+	certCA, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
 		panic(err)
 	}
 
-	certPool.AddCert(certCA)
-
-	if certClient, err = tls.X509KeyPair([]byte(constClientCert), []byte(constClientKey)); err != nil {
+	certClient, err := tls.X509KeyPair([]byte(constClientCert), []byte(constClientKey))
+	if err != nil {
 		panic(err)
 	}
 
-	goproxy.MitmConnect = &goproxy.ConnectAction{
-		Action: goproxy.ConnectMitm,
-		TLSConfig: func(host string, ctx *goproxy.ProxyCtx) (*tls.Config, error) {
-			return &tlsConfigProxy, nil
-		},
-	}
-
-	tlsConfigProxy.Certificates = []tls.Certificate{certClient}
-	tlsConfigHttp.Certificates = []tls.Certificate{certClient}
+	tlsConfig.RootCAs = x509.NewCertPool()
+	tlsConfig.RootCAs.AddCert(certCA)
+	tlsConfig.Certificates = []tls.Certificate{certClient}
 }

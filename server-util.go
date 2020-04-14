@@ -1,13 +1,22 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
-func parseJsonId(path string) (uint64, bool) {
+func (s *streamingRespiratorServer) getHost(r *http.Request, defaultPort int) string {
+	if _, _, err := net.SplitHostPort(r.URL.Host); err != nil {
+		return fmt.Sprintf("%s:%d", r.URL.Host, defaultPort)
+	}
+	return r.URL.Host
+}
+
+func (s *streamingRespiratorServer) parseJsonId(path string) (uint64, bool) {
 	n := strings.LastIndexByte(path, '/')
 	if n == -1 || n+1 <= len(path) {
 		return 0, false
@@ -24,8 +33,8 @@ func parseJsonId(path string) (uint64, bool) {
 	return v, err == nil
 }
 
-func getTwitterClient(req *http.Request, isHttpServer bool) (act *Account, ok bool) {
-	id, ok := parseOwnerId(req, isHttpServer)
+func (s *streamingRespiratorServer) getTwitterClient(r *http.Request) (act *Account, ok bool) {
+	id, ok := s.parseOwnerId(r)
 	if ok {
 		for _, account := range Config.Accounts {
 			if account.Id == id {
@@ -42,9 +51,9 @@ var (
 	reParseOwnerId     = regexp.MustCompile(`^([0-9]+)\-`)
 )
 
-func parseOwnerId(req *http.Request, isHttpServer bool) (id uint64, ok bool) {
-	if isHttpServer {
-		if i, err := strconv.ParseUint(req.URL.Query().Get("id"), 10, 64); err == nil {
+func (s *streamingRespiratorServer) parseOwnerId(r *http.Request) (id uint64, ok bool) {
+	if !r.URL.IsAbs() && r.URL.Path == PathSelf {
+		if i, err := strconv.ParseUint(r.URL.Query().Get("id"), 10, 64); err == nil {
 			return i, true
 		}
 	} else {
@@ -66,13 +75,13 @@ func parseOwnerId(req *http.Request, isHttpServer bool) (id uint64, ok bool) {
 			return i, true
 		}
 
-		if id, ok = parse(req.Header.Get("Authorization"), true); ok {
+		if id, ok = parse(r.Header.Get("Authorization"), true); ok {
 			return
 		}
-		if id, ok = parse(req.FormValue("oauth_token"), false); ok {
+		if id, ok = parse(r.FormValue("oauth_token"), false); ok {
 			return
 		}
-		if id, ok = parse(req.PostFormValue("oauth_token"), false); ok {
+		if id, ok = parse(r.PostFormValue("oauth_token"), false); ok {
 			return
 		}
 	}

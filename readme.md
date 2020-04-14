@@ -1,10 +1,11 @@
 # Streaming Respirator (Server)
 
 - [Stremaing Resepirator](https://github.com/RyuaNerin/StreamingRespirator) 의 설정으로, 개인 서버에서 실행하여 사용할 수 있게 하는게 목적입니다.
-- 클라이언트에서 [스트리밍 호흡기 CA 인증서](https://raw.githubusercontent.com/RyuaNerin/StreamingRespirator/master/StreamingRespirator/Certificate/ca.crt)를 다운로드 후 설치해주세요
-- 이 레포지토리는 기분이 내킬 때만 작업합니다.
 
-- 포트 하나만 열어도 proxy, http, https 모두 지원됩니다.
+- 클라이언트에서 [스트리밍 호흡기 CA 인증서](https://raw.githubusercontent.com/RyuaNerin/StreamingRespirator/master/StreamingRespirator/Certificate/ca.crt)를 다운로드 후 설치해주세요
+
+- 포트 하나만 열어도 proxy, http, https 방식 모두 지원됩니다.
+    - Min TLS Version : `TLSv1.2`
 
 ## Arguments
 
@@ -14,9 +15,9 @@
 |`-id (VAL)`|O|프록시 인증용 ID|
 |`-pw (VAL)`|O|프록시 인증용 PW|
 |`-bind (VAL)`||서버에 사용할 바인딩 주소입니다.|
-|`-server-cert (VAL)`|||http 서버에 사용할 SSL/TLS 인증서입니다. (`-bind` 옵션과 함께 사용됩니다.)|
-|`-server-key (VAL)`|||http 서버에 사용할 SSL/TLS 인증서입니다. (`-bind` 옵션과 함께 사용됩니다.)|
-|`-unix (VAL)`||유닉스 소켓에 바인딩합니다. plain 으로 제공합니다.|
+|`-bind-cert (VAL)`|||http 서버에 사용할 SSL/TLS 인증서입니다. (`-bind` 옵션과 함께 사용됩니다.)|
+|`-bind-key (VAL)`|||http 서버에 사용할 SSL/TLS 인증서입니다. (`-bind` 옵션과 함께 사용됩니다.)|
+|`-unix (VAL)`||유닉스 소켓에 바인딩합니다.|
 |`-unix-perm (VAL)`||`-unix` 옵션 사용 시 유닉스 소켓의 퍼미션을 설정합니다. 기본값은 `0700` 입니다|
 |`-proxy (VAL)`||내부 HTTP Client 에서 사용할 프록시입니다.|
 |`-verbose`||자세한 로그를 출력합니다.|
@@ -29,7 +30,7 @@
 
 - 옵션 예시
     - `streaming-respirator -cfg "StreamingRespirator.cfg" -id "auth" -pw "123456789" -bind ":8811"`
-    - `streaming-respirator -cfg "StreamingRespirator.cfg" -id "auth" -pw "123456789" -bind ":8812" -server-cert "server.crt" -server-key "server.key"`
+    - `streaming-respirator -cfg "StreamingRespirator.cfg" -id "auth" -pw "123456789" -bind ":8812" -server-cert "server.crt" -bind-key "bind.key"`
     - `streaming-respirator -cfg "StreamingRespirator.cfg" -id "auth" -pw "123456789" -unix "/run/streaming-respirator.sock"` + nginx (proxy_pass)
 
 ## 사용 방법
@@ -58,7 +59,6 @@
 - 호흡기 서버 모드
     - `http://<host>:<port>/userstream?id=<user_id>`
     - `https://<host>:<port>/userstream?id=<user_id>`
-    - Min Versino : `TLSv1.2`
     - HTTP 표준에 따라 `Authorization` 헤더를 설정해주어야 합니다.
     - 인증 방식 : `Basic`
 

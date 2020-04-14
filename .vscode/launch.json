@@ -9,14 +9,13 @@
             "program": "${workspaceFolder}",
             "env": {},
             "args": [
-                "-config"   , "StreamingRespirator.cnf",
-                "-id"       , "123",
-                "-pw"       , "123",
-                "-proxy"    , "127.0.0.1:18811",
-                "-http"     , "127.0.0.1:18812",
+                "-config", "StreamingRespirator.cnf",
+                "-id", "123",
+                "-pw", "123",
+                "-bind", "127.0.0.1:18811",
                 "-verbose",
                 "-debug",
-                "-client-http-proxy", "127.0.0.1:58461"
+                "-proxy", "127.0.0.1:58461"
             ]
         }
     ]

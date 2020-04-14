@@ -23,6 +23,7 @@ func newHyperListner(l net.Listener, tlsConfig *tls.Config) *hyperListener {
 func (hl *hyperListener) Accept() (net.Conn, error) {
 	c, err := hl.l.Accept()
 	if err != nil {
+		logger.Printf("%+v\n", err)
 		return nil, err
 	}
 	return newHyperConn(c, hl.cfg), nil
@@ -51,6 +52,7 @@ func newHyperConn(c net.Conn, tlsConfig *tls.Config) *hyperConn {
 
 func (hc *hyperConn) Read(b []byte) (n int, err error) {
 	if err := hc.handshake(); err != nil {
+		logger.Printf("%+v\n", err)
 		return 0, err
 	}
 
@@ -71,6 +73,7 @@ func (hc *hyperConn) handshake() error {
 		return io.ErrUnexpectedEOF
 	}
 	if err != nil {
+		logger.Printf("%+v\n", err)
 		return err
 	}
 

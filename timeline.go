@@ -83,11 +83,12 @@ func (tl *TimeLine) refreshThread(ctx context.Context) {
 }
 
 func (tl *TimeLine) update(ctx context.Context, method, url string, isFirstRefresh bool) (cursorNew string, wait time.Duration) {
-	req, _ := tl.account.CreateRequest(method, url, nil)
+	req, _ := tl.account.CreateRequest(ctx, method, url, nil)
 	req.WithContext(ctx)
 
 	res, err := tl.account.httpClient.Do(req)
 	if err != nil {
+		logger.Printf("%+v\n", err)
 		return "", TLWaitError
 	}
 	defer res.Body.Close()

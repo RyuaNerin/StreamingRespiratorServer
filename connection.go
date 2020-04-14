@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"io"
+	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -16,55 +18,76 @@ var (
 )
 
 type Connection struct {
-	w      io.Writer
+	w        http.ResponseWriter
+	wFlusher http.Flusher
+
+	chanClosedRequest <-chan struct{} // Request 닫힘
+	chanClosedWriter  <-chan bool     // ResponseWriter 닫힘
+
+	chanClosed chan struct{} // 이 커넥션 닫힘
+
 	closed int32
 
-	ctx context.Context
-
-	done chan struct{}
-
-	data chan []byte
+	writeLock    sync.Mutex
+	tmrKeepAlive *time.Timer
 }
 
-func newConnection(w io.Writer, ctx context.Context) *Connection {
-	return &Connection{
-		w:    w,
-		ctx:  ctx,
-		done: make(chan struct{}),
-		data: make(chan []byte),
+func newConnection(w http.ResponseWriter, ctx context.Context) *Connection {
+	c := &Connection{
+		w:                 w,
+		wFlusher:          w.(http.Flusher),
+		chanClosedRequest: ctx.Done(),
+		chanClosed:        make(chan struct{}),
+		tmrKeepAlive:      time.NewTimer(0),
 	}
+
+	if cn, ok := w.(http.CloseNotifier); ok {
+		c.chanClosedWriter = cn.CloseNotify()
+	}
+
+	c.w.Header().Set("Transfer-Encoding", "chunked")
+	c.w.Header().Set("Content-type", "application/json; charset=utf-8")
+	c.w.Header().Set("Connection", "close")
+	c.w.WriteHeader(http.StatusOK)
+
+	go c.keepAlive()
+	return c
 }
 
 func (c *Connection) Send(data []byte) {
+	c.sendInner(data, true)
+}
+func (c *Connection) sendInner(data []byte, resetKeepAlive bool) {
 	if atomic.LoadInt32(&c.closed) == 1 {
 		return
 	}
+	c.writeLock.Lock()
+	defer c.writeLock.Unlock()
 
-	c.data <- data
-}
-
-func (c *Connection) Broadcaster() {
-	var err error
-
-	for atomic.LoadInt32(&c.closed) == 0 {
-		select {
-		case <-c.ctx.Done():
-			break
-
-		case <-time.After(KeepAlivePeriod):
-			_, err = c.w.Write(KeepAliveData)
-
-		case d := <-c.data:
-			_, err = c.w.Write(d)
-		}
-
-		if err != nil && err != io.EOF {
-			break
+	select {
+	case <-c.chanClosedRequest:
+	case <-c.chanClosedWriter:
+	default:
+		n, err := c.w.Write(data)
+		if n == len(data) && (err == nil || err == io.EOF) {
+			if c.wFlusher != nil {
+				c.wFlusher.Flush()
+			}
+			return
 		}
 	}
-	atomic.StoreInt32(&c.closed, 1)
 
 	// 채널 비우기
-	close(c.data)
-	close(c.done)
+	atomic.StoreInt32(&c.closed, 1)
+	if resetKeepAlive {
+		c.tmrKeepAlive.Reset(KeepAlivePeriod)
+	}
+}
+
+// keep-alive 패킷 보내는 역할
+func (c *Connection) keepAlive() {
+	for atomic.LoadInt32(&c.closed) == 0 {
+		<-c.tmrKeepAlive.C
+		c.sendInner(KeepAliveData, false)
+	}
 }
