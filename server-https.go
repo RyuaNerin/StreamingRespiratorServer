@@ -74,6 +74,7 @@ func (s *streamingRespiratorServer) handleProxyHttpsMitm(clientConn net.Conn, r 
 
 		r, err = http.ReadRequest(clientConnTlsReader)
 		if err != nil && err != io.EOF {
+			logger.Printf("%+v\n", err)
 			return
 		}
 
@@ -91,16 +92,16 @@ func (s *streamingRespiratorServer) handleProxyHttpsMitm(clientConn net.Conn, r 
 			go s.handleStreaming(&respWriter, r)
 		}
 		resp := http.Response{
-			Request:    r,
-			Proto:      r.Proto,
-			ProtoMajor: r.ProtoMajor,
-			ProtoMinor: r.ProtoMinor,
 			StatusCode: <-respWriter.statusCode,
 			Header:     respWriter.header,
 			Body:       rbr,
 		}
+		s.setResponse(&resp, r)
 
-		resp.Write(clientConnTls)
+		err = resp.Write(clientConnTls)
+		if err != nil && err != io.EOF {
+			logger.Printf("%+v\n", err)
+		}
 	}
 }
 func (s *streamingRespiratorServer) handleProxyHttpsTunnel(clientConn net.Conn, r *http.Request) {

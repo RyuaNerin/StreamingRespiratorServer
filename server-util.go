@@ -88,3 +88,10 @@ func (s *streamingRespiratorServer) parseOwnerId(r *http.Request) (id uint64, ok
 
 	return 0, false
 }
+
+func (s *streamingRespiratorServer) setResponse(resp *http.Response, r *http.Request) {
+	resp.Request = r
+	resp.Proto = r.Proto
+	resp.ProtoMajor = r.ProtoMajor
+	resp.ProtoMinor = r.ProtoMinor
+}

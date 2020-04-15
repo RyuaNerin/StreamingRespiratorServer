@@ -118,8 +118,10 @@ func (act *Account) VerifyCredentials(ctx context.Context) bool {
 			nil,
 		)
 		res, err := act.httpClient.Do(req)
-		if err == nil {
-			res.Body.Close()
+		if err != nil {
+			logger.Printf("%+v\n", err)
+		} else {
+			defer res.Body.Close()
 
 			if res.StatusCode == http.StatusOK {
 				act.verifiedAt = time.Now()

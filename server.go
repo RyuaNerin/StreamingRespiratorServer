@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
+	"io"
 	"net"
 	"net/http"
 
@@ -79,49 +81,98 @@ func (s *streamingRespiratorServer) handleProxyTunnel(w http.ResponseWriter, r *
 		return
 	}
 
-	remoteConn, err := net.Dial("tcp", s.getHost(r, 80))
-	if err != nil {
-		logger.Printf("%+v\n", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	defer remoteConn.Close()
-
-	hj, ok := w.(http.Hijacker)
+	hi, ok := w.(http.Hijacker)
 	if !ok {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	clientConn, _, err := hj.Hijack()
+	clientConn, clientConnRW, err := hi.Hijack()
 	if err != nil {
-		logger.Printf("%+v\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	defer clientConn.Close()
 
-	//////////////////////////////////////////////////
-	// Client Request -> remote
-	if err = r.Write(remoteConn); err != nil {
-		logger.Printf("%+v\n", err)
-		w.WriteHeader(http.StatusBadGateway)
-		return
-	}
+	clientConnReader := bufio.NewReader(clientConn)
 
-	/**
-	// remote Respose -> Server -> Client
-	resp, err := http.ReadResponse(bufio.NewReader(remoteConn), r)
-	if err != nil {
-		w.WriteHeader(http.StatusBadGateway)
-		return
-	}
-	err = resp.Write(clientConn)
-	if err != nil {
-		return
-	}
-	*/
+	var conn net.Conn
+	connHost := ""
+	connReader := bufio.NewReader(nil)
+	for {
+		if r == nil {
+			r, err = http.ReadRequest(clientConnReader)
+			if err != nil && err != io.EOF {
+				logger.Printf("%+v\n", err)
 
-	//////////////////////////////////////////////////
-	// Copy Both
-	s.copy(clientConn, remoteConn)
+				if conn == nil {
+					conn.Close()
+				}
+				return
+			}
+		}
+
+		if host := s.getHost(r, 80); host != connHost {
+			if conn != nil {
+				conn.Close()
+			}
+
+			conn, err = net.Dial("tcp", host)
+			if err != nil {
+				logger.Printf("%+v\n", err)
+
+				resp := http.Response{
+					StatusCode: http.StatusBadGateway,
+				}
+				s.setResponse(&resp, r)
+				err = resp.Write(conn)
+				if err != nil && err != io.EOF {
+					logger.Printf("%+v\n", err)
+					conn.Close()
+					return
+				}
+
+				r = nil
+				continue
+			}
+			connReader.Reset(conn)
+		}
+
+		err = r.Write(conn)
+		if err != nil && err != io.EOF {
+			resp := http.Response{
+				StatusCode: http.StatusBadGateway,
+			}
+			s.setResponse(&resp, r)
+			err = resp.Write(conn)
+			if err != nil && err != io.EOF {
+				logger.Printf("%+v\n", err)
+				conn.Close()
+				return
+			}
+		}
+
+		resp, err := http.ReadResponse(connReader, r)
+		if err != nil {
+			logger.Printf("%+v\n", err)
+			conn.Close()
+			return
+		}
+
+		err = resp.Write(clientConnRW.Writer)
+		if err != nil && err != io.EOF {
+			logger.Printf("%+v\n", err)
+			conn.Close()
+			return
+		}
+
+		err = clientConnRW.Writer.Flush()
+		if err != nil && err != io.EOF {
+			logger.Printf("%+v\n", err)
+			conn.Close()
+			return
+		}
+
+		r = nil
+	}
 }
