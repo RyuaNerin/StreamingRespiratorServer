@@ -11,7 +11,9 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
-const PathSelf = "/userstream"
+const (
+	PathSelf = "/userstream"
+)
 
 type streamingRespiratorServer struct {
 	httpHandler http.Handler
@@ -23,13 +25,13 @@ type streamingRespiratorServer struct {
 
 func newStreamingRespiratorServer(server2 *http2.Server, tlsConfig *tls.Config) *streamingRespiratorServer {
 	s := &streamingRespiratorServer{
+		tlsConfig: tlsConfig,
 		httpClient: http.Client{
 			Transport: &http.Transport{
-				MaxIdleConnsPerHost: 64,
+				MaxIdleConnsPerHost: 32,
 				Proxy:               proxy,
 			},
 		},
-		tlsConfig: tlsConfig,
 	}
 
 	mux := http.NewServeMux()
@@ -87,7 +89,7 @@ func (s *streamingRespiratorServer) handleProxyTunnel(w http.ResponseWriter, r *
 		return
 	}
 
-	clientConn, clientConnRW, err := hi.Hijack()
+	clientConn, _, err := hi.Hijack()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -96,28 +98,34 @@ func (s *streamingRespiratorServer) handleProxyTunnel(w http.ResponseWriter, r *
 
 	clientConnReader := bufio.NewReader(clientConn)
 
-	var conn net.Conn
-	connHost := ""
-	connReader := bufio.NewReader(nil)
+	var remoteConn net.Conn
+	remoteHost := ""
+	remoteConnReader := bufio.NewReader(nil)
 	for {
 		if r == nil {
+			remoteConnReader.Reset(remoteConn)
 			r, err = http.ReadRequest(clientConnReader)
 			if err != nil && err != io.EOF {
 				logger.Printf("%+v\n", err)
 
-				if conn == nil {
-					conn.Close()
+				if remoteConn == nil {
+					remoteConn.Close()
 				}
 				return
 			}
 		}
 
-		if host := s.getHost(r, 80); host != connHost {
-			if conn != nil {
-				conn.Close()
+		if s.isWebsocket(r) {
+			s.handleProxyWebSocket(clientConn, clientConnReader, r, false)
+			return
+		}
+
+		if host := s.getHost(r, 80); host != remoteHost {
+			if remoteConn != nil {
+				remoteConn.Close()
 			}
 
-			conn, err = net.Dial("tcp", host)
+			remoteConn, err = net.Dial("tcp", host)
 			if err != nil {
 				logger.Printf("%+v\n", err)
 
@@ -125,51 +133,44 @@ func (s *streamingRespiratorServer) handleProxyTunnel(w http.ResponseWriter, r *
 					StatusCode: http.StatusBadGateway,
 				}
 				s.setResponse(&resp, r)
-				err = resp.Write(conn)
+				err = resp.Write(remoteConn)
 				if err != nil && err != io.EOF {
 					logger.Printf("%+v\n", err)
-					conn.Close()
+					remoteConn.Close()
 					return
 				}
 
 				r = nil
 				continue
 			}
-			connReader.Reset(conn)
+			remoteConnReader.Reset(remoteConn)
 		}
 
-		err = r.Write(conn)
+		err = r.Write(remoteConn)
 		if err != nil && err != io.EOF {
 			resp := http.Response{
 				StatusCode: http.StatusBadGateway,
 			}
 			s.setResponse(&resp, r)
-			err = resp.Write(conn)
+			err = resp.Write(remoteConn)
 			if err != nil && err != io.EOF {
 				logger.Printf("%+v\n", err)
-				conn.Close()
+				remoteConn.Close()
 				return
 			}
 		}
 
-		resp, err := http.ReadResponse(connReader, r)
+		resp, err := http.ReadResponse(remoteConnReader, r)
 		if err != nil {
 			logger.Printf("%+v\n", err)
-			conn.Close()
+			remoteConn.Close()
 			return
 		}
 
-		err = resp.Write(clientConnRW.Writer)
+		err = resp.Write(clientConn)
 		if err != nil && err != io.EOF {
 			logger.Printf("%+v\n", err)
-			conn.Close()
-			return
-		}
-
-		err = clientConnRW.Writer.Flush()
-		if err != nil && err != io.EOF {
-			logger.Printf("%+v\n", err)
-			conn.Close()
+			remoteConn.Close()
 			return
 		}
 

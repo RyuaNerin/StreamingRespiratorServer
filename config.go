@@ -43,4 +43,9 @@ func loadConfig(path string) {
 	if err != nil && err != io.EOF {
 		panic(err)
 	}
+
+	for _, acc := range Config.Accounts {
+		acc.Init()
+	}
+
 }

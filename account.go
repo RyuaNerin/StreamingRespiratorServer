@@ -23,11 +23,9 @@ const (
 )
 
 type Account struct {
-	Id         uint64 `json:"id"`
-	ScreenName string `json:"screen_name"`
-	Cookie     string `json:"cookie"`
-
-	onceInit         sync.Once
+	Id               uint64 `json:"id"`
+	ScreenName       string `json:"screen_name"`
+	Cookie           string `json:"cookie"`
 	cookieXCsrfToken string
 
 	httpClient http.Client
@@ -101,8 +99,6 @@ func (act *Account) Init() {
 }
 
 func (act *Account) VerifyCredentials(ctx context.Context) bool {
-	act.onceInit.Do(act.Init)
-
 	act.verifiedLock.Lock()
 	defer act.verifiedLock.Unlock()
 
@@ -139,8 +135,6 @@ func (act *Account) VerifyCredentials(ctx context.Context) bool {
 }
 
 func (act *Account) AddConnectionAndWait(w http.ResponseWriter, ctx context.Context) {
-	act.onceInit.Do(act.Init)
-
 	conn := newConnection(w, ctx)
 
 	//////////////////////////////////////////////////
@@ -222,8 +216,6 @@ func (act *Account) AddConnectionAndWait(w http.ResponseWriter, ctx context.Cont
 }
 
 func (act *Account) CreateRequest(ctx context.Context, method string, url string, body io.Reader) (*http.Request, error) {
-	act.onceInit.Do(act.Init)
-
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
@@ -247,8 +239,6 @@ func (act *Account) CreateRequest(ctx context.Context, method string, url string
 
 // 전달된 패킷은 전송 후 Release 됨.
 func (act *Account) Send(packetList ...Packet) {
-	act.onceInit.Do(act.Init)
-
 	act.connectionsLock.RLock()
 	connList := make([]*Connection, 0, act.connections.Len())
 	{
@@ -336,8 +326,6 @@ func (act *Account) SendStatusRemovedWithCheck(id uint64) {
 }
 
 func (act *Account) GetUserCache(findId uint64, findScreenName string) (id uint64, ScreenName string, ok bool) {
-	act.onceInit.Do(act.Init)
-
 	act.userCacheLock.Lock()
 	defer act.userCacheLock.Unlock()
 
@@ -354,8 +342,6 @@ func (act *Account) GetUserCache(findId uint64, findScreenName string) (id uint6
 }
 
 func (act *Account) UserCache(users map[uint64]TwitterUser) {
-	act.onceInit.Do(act.Init)
-
 	act.userCacheLock.Lock()
 	defer act.userCacheLock.Unlock()
 

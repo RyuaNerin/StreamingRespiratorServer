@@ -3,10 +3,15 @@ package main
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"runtime"
 	"strconv"
+)
+
+const (
+	CopyBufferSize = 4 * 1024 // 4 KiB
 )
 
 func (s *streamingRespiratorServer) writeBytes(w http.ResponseWriter, statusCode int, responseBody []byte) error {
@@ -50,26 +55,28 @@ func (s *streamingRespiratorServer) copyHeader(dst http.Header, src http.Header)
 	}
 }
 
-func (s *streamingRespiratorServer) copy(client io.ReadWriter, remote io.ReadWriter) {
+func (s *streamingRespiratorServer) copy(client io.ReadWriter, clientReader *bufio.Reader, remote io.ReadWriter) {
 	ctx, ctxCancel := context.WithCancel(context.Background())
 
-	clientWithContext := readerWithContext{
-		br:  bufio.NewReader(client),
+	clientReaderWithContext := readerWithContext{
+		br:  clientReader,
 		ctx: ctx,
 	}
-	remoteWithContext := readerWithContext{
+	remoteReaderWithContext := readerWithContext{
 		br:  bufio.NewReader(remote),
 		ctx: ctx,
 	}
 
-	done := make(chan struct{}, 2)
-	go s.copyOneway(client, &remoteWithContext, done, ctxCancel)
-	go s.copyOneway(remote, &clientWithContext, done, ctxCancel)
-	<-done
+	done := make(chan struct{}, 1)
+	go s.copyOneway(client, &remoteReaderWithContext, done, ctxCancel, "remote -> client")
+	s.copyOneway(remote, &clientReaderWithContext, done, ctxCancel, "client -> remote")
+	//go s.copyOneway(remote, &clientReaderWithContext, done, ctxCancel, "client -> remote")
+	//<-done
 	<-done
 }
-func (s *streamingRespiratorServer) copyOneway(dst io.Writer, src io.Reader, ch chan struct{}, cancel context.CancelFunc) {
-	io.Copy(dst, src)
+func (s *streamingRespiratorServer) copyOneway(dst io.Writer, src io.Reader, ch chan struct{}, cancel context.CancelFunc, desc string) {
+	_, err := io.CopyN(dst, src, CopyBufferSize)
+	fmt.Println(desc, "=>", err)
 	cancel()
 	ch <- struct{}{}
 }

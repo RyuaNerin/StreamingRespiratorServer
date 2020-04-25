@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -94,4 +97,53 @@ func (s *streamingRespiratorServer) setResponse(resp *http.Response, r *http.Req
 	resp.Proto = r.Proto
 	resp.ProtoMajor = r.ProtoMajor
 	resp.ProtoMinor = r.ProtoMinor
+}
+
+func (s *streamingRespiratorServer) writeValuesWithEncoding(w io.Writer, value url.Values) {
+	if value == nil {
+		return
+	}
+
+	b := bufio.NewWriter(w)
+	defer b.Flush()
+
+	written := false
+	for k, vr := range value {
+		for _, v := range vr {
+			if written {
+				b.WriteByte('&')
+			}
+			written = true
+
+			s.writeValueWithEncoding(b, k, true)
+			b.WriteByte('=')
+			s.writeValueWithEncoding(b, v, true)
+		}
+	}
+}
+
+func (s *streamingRespiratorServer) writeValueWithEncoding(w *bufio.Writer, v string, isKey bool) {
+	const hex = "0123456789ABCDEF"
+
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+
+		switch {
+		case 'a' <= c && c <= 'z':
+			w.WriteByte(c)
+		case 'A' <= c && c <= 'Z':
+			w.WriteByte(c)
+		case '0' <= c && c <= '9':
+			w.WriteByte(c)
+		case c == '-' || c == '_' || c == '.' || c == '~':
+			w.WriteByte(c)
+		case c == ' ' && isKey:
+			w.WriteByte('+')
+
+		default:
+			w.WriteByte('%')
+			w.WriteByte(hex[c>>4])
+			w.WriteByte(hex[c&15])
+		}
+	}
 }

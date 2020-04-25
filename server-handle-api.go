@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -38,7 +39,7 @@ func (s *streamingRespiratorServer) handleApi(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	s.handleProxyTunnel(w, r)
+	s.tunnelAndGetResponse(w, r, act, nil)
 }
 
 func (s *streamingRespiratorServer) handleApiDestroyOrUnretweet(w http.ResponseWriter, r *http.Request, act *Account) {
@@ -125,7 +126,7 @@ func (s *streamingRespiratorServer) handleApiUpdate(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if r.PostForm != nil {
+	if r.PostForm == nil {
 		_, _, _ = s.tunnelAndGetResponse(w, r, act, nil)
 		return
 	}
@@ -178,9 +179,7 @@ func (s *streamingRespiratorServer) handleApiUpdateSendDm(w http.ResponseWriter,
 		"https://api.twitter.com/1.1/direct_messages/events/new.json",
 		buffRequest,
 	)
-	nreq.Header = http.Header{
-		"Content-Type": []string{"application/json; charset=utf-8"},
-	}
+	nreq.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := act.httpClient.Do(nreq)
 	if err != nil {
@@ -211,23 +210,38 @@ func (s *streamingRespiratorServer) tunnelAndGetResponse(w http.ResponseWriter, 
 	req, _ := http.NewRequestWithContext(r.Context(), r.Method, r.URL.String(), nil)
 
 	if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" {
-		r.ParseForm()
-	}
+		buffRequest := BytesPool.Get().(*bytes.Buffer)
+		BytesPool.Put(buffRequest)
+		buffRequest.Reset()
 
-	resp, err := act.httpClient.Do(req)
+		s.writeValuesWithEncoding(buffRequest, r.PostForm)
+
+		req.Body = ioutil.NopCloser(buffRequest)
+	}
+	req.Header = make(http.Header)
+	s.copyHeader(req.Header, r.Header)
+
+	var resp *http.Response
+	var err error
+	if act != nil {
+		resp, err = act.httpClient.Do(req)
+	} else {
+		resp, err = s.httpClient.Do(req)
+	}
 	if err != nil {
+		logger.Printf("%+v\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return 0, false, false
 	}
 	defer resp.Body.Close()
 
 	buff := BytesPool.Get().(*bytes.Buffer)
+	defer BytesPool.Put(buff)
 	buff.Reset()
 
 	_, err = io.Copy(buff, resp.Body)
 	if err != nil && err != io.EOF {
-		BytesPool.Put(buff)
-
+		logger.Printf("%+v\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return 0, false, false
 	}
