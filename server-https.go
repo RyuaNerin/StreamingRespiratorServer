@@ -6,7 +6,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
+)
+
+const (
+	MaxRequestBody = 10 * 1024 * 1024 // 10 MiB
 )
 
 var (
@@ -86,6 +91,22 @@ func (s *streamingRespiratorServer) handleProxyHttpsMitm(clientConn net.Conn, r 
 		//////////////////////////////////////////////////
 		// 너무 큰 Request 는 스킵한다.
 
+		if contentLength, err := strconv.ParseInt(r.Header.Get("Content-Type"), 10, 64); err == nil {
+			if contentLength > MaxRequestBody {
+				resp := http.Response{
+					StatusCode: http.StatusRequestEntityTooLarge,
+					Body:       nil,
+				}
+
+				err = resp.Write(clientConnTls)
+				if err != nil && err != io.EOF {
+					logger.Printf("%+v\n", err)
+					return
+				}
+				continue
+			}
+		}
+
 		rbr, rbw := io.Pipe()
 
 		respWriter := ProxyResponseWriter{
@@ -105,14 +126,27 @@ func (s *streamingRespiratorServer) handleProxyHttpsMitm(clientConn net.Conn, r 
 				rbw.Close()
 			}()
 		}
+		respStatusCode := <-respWriter.statusCode
 		resp := http.Response{
-			StatusCode: <-respWriter.statusCode,
-			Header:     respWriter.header,
-			Body:       rbr,
+			StatusCode:    respStatusCode,
+			Header:        respWriter.header,
+			ContentLength: respWriter.contentLength,
+			Body:          rbr,
+
+			/**
+			Body: &debugStream{
+				name: r.URL.String(),
+				ioi:  rbr,
+			},
+			*/
 		}
 		s.setResponse(&resp, r)
 
 		err = resp.Write(clientConnTls)
+
+		rbr.Close()
+		rbw.Close()
+
 		if err != nil && err != io.EOF {
 			logger.Printf("%+v\n", err)
 			return
@@ -130,6 +164,7 @@ func (s *streamingRespiratorServer) handleProxyHttpsTunnel(clientConn net.Conn, 
 
 	switch {
 	case strings.ToLower(r.Header.Get("Proxy-Connection")) == "keep-alive":
+		fallthrough
 	case strings.ToLower(r.Header.Get("Connection")) == "keep-alive":
 		_, err = clientConn.Write(connectionEstablishedKA)
 
@@ -141,12 +176,13 @@ func (s *streamingRespiratorServer) handleProxyHttpsTunnel(clientConn net.Conn, 
 		return
 	}
 
-	s.copy(clientConn, bufio.NewReader(clientConn), remoteConn)
+	s.copy(clientConn, bufio.NewReader(clientConn), remoteConn, r.Context())
 }
 
 type ProxyResponseWriter struct {
-	statusCode chan int
-	header     http.Header
+	statusCode    chan int
+	header        http.Header
+	contentLength int64
 
 	w io.Writer
 }
@@ -155,8 +191,14 @@ func (w *ProxyResponseWriter) Header() http.Header {
 	return w.header
 }
 func (w *ProxyResponseWriter) Write(p []byte) (int, error) {
+	logger.Println("ProxyResponseWriter write", len(p))
 	return w.w.Write(p)
 }
 func (w *ProxyResponseWriter) WriteHeader(statusCode int) {
+	logger.Println(w.header.Get("Content-Length"))
+
+	if c, err := strconv.ParseInt(w.header.Get("Content-Length"), 10, 64); err == nil {
+		w.contentLength = c
+	}
 	w.statusCode <- statusCode
 }

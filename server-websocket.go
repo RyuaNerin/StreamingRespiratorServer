@@ -58,5 +58,5 @@ func (s *streamingRespiratorServer) handleProxyWebSocket(client io.ReadWriter, c
 	}
 
 	//////////////////////////////////////////////////
-	s.copy(client, clientReader, target)
+	s.copy(client, clientReader, target, r.Context())
 }

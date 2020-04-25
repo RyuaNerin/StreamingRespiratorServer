@@ -3,15 +3,23 @@ package main
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"runtime"
 	"strconv"
+	"sync"
 )
 
 const (
 	CopyBufferSize = 4 * 1024 // 4 KiB
+)
+
+var (
+	CopyBuffer = sync.Pool{
+		New: func() interface{} {
+			return make([]byte, CopyBufferSize)
+		},
+	}
 )
 
 func (s *streamingRespiratorServer) writeBytes(w http.ResponseWriter, statusCode int, responseBody []byte) error {
@@ -47,16 +55,21 @@ func (s *streamingRespiratorServer) writeResponse(w http.ResponseWriter, resp *h
 
 func (s *streamingRespiratorServer) copyHeader(dst http.Header, src http.Header) {
 	for k, vr := range src {
-		dst.Del(k)
+		switch k {
+		case "Content-Encoding":
 
-		for _, v := range vr {
-			dst.Add(k, v)
+		default:
+			dst.Del(k)
+
+			for _, v := range vr {
+				dst.Add(k, v)
+			}
 		}
 	}
 }
 
-func (s *streamingRespiratorServer) copy(client io.ReadWriter, clientReader *bufio.Reader, remote io.ReadWriter) {
-	ctx, ctxCancel := context.WithCancel(context.Background())
+func (s *streamingRespiratorServer) copy(client io.ReadWriter, clientReader *bufio.Reader, remote io.ReadWriter, ctx context.Context) {
+	ctx, ctxCancel := context.WithCancel(ctx)
 
 	clientReaderWithContext := readerWithContext{
 		br:  clientReader,
@@ -68,17 +81,23 @@ func (s *streamingRespiratorServer) copy(client io.ReadWriter, clientReader *buf
 	}
 
 	done := make(chan struct{}, 1)
-	go s.copyOneway(client, &remoteReaderWithContext, done, ctxCancel, "remote -> client")
-	s.copyOneway(remote, &clientReaderWithContext, done, ctxCancel, "client -> remote")
-	//go s.copyOneway(remote, &clientReaderWithContext, done, ctxCancel, "client -> remote")
-	//<-done
+	go s.copyOneway(remote, &clientReaderWithContext, done, ctxCancel, "client -> remote")
+	s.copyOneway(client, &remoteReaderWithContext, nil, ctxCancel, "remote -> client")
 	<-done
 }
 func (s *streamingRespiratorServer) copyOneway(dst io.Writer, src io.Reader, ch chan struct{}, cancel context.CancelFunc, desc string) {
-	_, err := io.CopyN(dst, src, CopyBufferSize)
-	fmt.Println(desc, "=>", err)
-	cancel()
-	ch <- struct{}{}
+	defer cancel()
+
+	buf := CopyBuffer.Get().([]byte)
+	defer CopyBuffer.Put(buf)
+
+	io.CopyBuffer(dst, src, buf)
+
+	logger.Println(desc)
+
+	if ch != nil {
+		ch <- struct{}{}
+	}
 }
 
 type readerWithContext struct {
@@ -87,7 +106,7 @@ type readerWithContext struct {
 }
 
 func (r *readerWithContext) Read(b []byte) (n int, err error) {
-	ch := make(chan error)
+	ch := make(chan error, 1)
 	go func() {
 		_, err := r.br.Peek(1)
 		ch <- err
