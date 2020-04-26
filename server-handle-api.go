@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cast"
 )
 
@@ -230,6 +231,7 @@ func (s *streamingRespiratorServer) tunnelAndGetResponse(w http.ResponseWriter, 
 	}
 	if err != nil {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		w.WriteHeader(http.StatusInternalServerError)
 		return 0, false, false
 	}
@@ -242,6 +244,7 @@ func (s *streamingRespiratorServer) tunnelAndGetResponse(w http.ResponseWriter, 
 	_, err = io.Copy(buff, resp.Body)
 	if err != nil && err != io.EOF {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		w.WriteHeader(http.StatusInternalServerError)
 		return 0, false, false
 	}

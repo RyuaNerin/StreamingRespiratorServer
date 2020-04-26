@@ -6,13 +6,21 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
+	"time"
 
+	"github.com/getsentry/sentry-go"
+	"github.com/pkg/errors"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
 
 const (
 	PathSelf = "/userstream"
+)
+
+var (
+	CurrentConnections int32 = 0
 )
 
 type streamingRespiratorServer struct {
@@ -28,8 +36,12 @@ func newStreamingRespiratorServer(server2 *http2.Server, tlsConfig *tls.Config) 
 		tlsConfig: tlsConfig,
 		httpClient: http.Client{
 			Transport: &http.Transport{
-				MaxIdleConnsPerHost: 32,
-				Proxy:               proxy,
+				MaxIdleConnsPerHost:   32,
+				Proxy:                 proxy,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 30 * time.Second,
+				IdleConnTimeout:       30 * time.Second,
+				ResponseHeaderTimeout: 30 * time.Second,
 			},
 		},
 	}
@@ -51,12 +63,15 @@ func newStreamingRespiratorServer(server2 *http2.Server, tlsConfig *tls.Config) 
 func (s *streamingRespiratorServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err := recover(); err != nil {
-			logger.Printf("%+v\n", err)
+			sentry.CaptureException(err.(error))
+			logger.Printf("%+v\n", errors.WithStack(err.(error)))
 		}
 	}()
 
-	logger.Println("BEG |", r.RemoteAddr, "|", r.Method, r.URL.String())
-	defer logger.Println("END |", r.RemoteAddr, "|", r.Method, r.URL.String())
+	logger.Println("BEG |", atomic.AddInt32(&CurrentConnections, 1), "|", r.RemoteAddr, "|", r.Method, r.URL.String())
+	defer func() {
+		logger.Println("END |", atomic.AddInt32(&CurrentConnections, -1), "|", r.RemoteAddr, "|", r.Method, r.URL.String())
+	}()
 
 	if r.Method == "CONNECT" {
 		s.handleProxyHttps(w, r)
@@ -107,12 +122,18 @@ func (s *streamingRespiratorServer) handleProxyTunnel(w http.ResponseWriter, r *
 			r, err = http.ReadRequest(clientConnReader)
 			if err != nil && err != io.EOF {
 				logger.Printf("%+v\n", err)
+				sentry.CaptureException(err.(error))
 
 				if remoteConn == nil {
 					remoteConn.Close()
 				}
 				return
 			}
+		}
+
+		if r == nil {
+			remoteConn.Close()
+			return
 		}
 
 		if s.isWebsocket(r) {
@@ -128,6 +149,7 @@ func (s *streamingRespiratorServer) handleProxyTunnel(w http.ResponseWriter, r *
 			remoteConn, err = net.Dial("tcp", host)
 			if err != nil {
 				logger.Printf("%+v\n", err)
+				sentry.CaptureException(err.(error))
 
 				resp := http.Response{
 					StatusCode: http.StatusBadGateway,
@@ -136,6 +158,7 @@ func (s *streamingRespiratorServer) handleProxyTunnel(w http.ResponseWriter, r *
 				err = resp.Write(remoteConn)
 				if err != nil && err != io.EOF {
 					logger.Printf("%+v\n", err)
+					sentry.CaptureException(err.(error))
 					remoteConn.Close()
 					return
 				}
@@ -155,6 +178,7 @@ func (s *streamingRespiratorServer) handleProxyTunnel(w http.ResponseWriter, r *
 			err = resp.Write(remoteConn)
 			if err != nil && err != io.EOF {
 				logger.Printf("%+v\n", err)
+				sentry.CaptureException(err.(error))
 				remoteConn.Close()
 				return
 			}
@@ -163,6 +187,7 @@ func (s *streamingRespiratorServer) handleProxyTunnel(w http.ResponseWriter, r *
 		resp, err := http.ReadResponse(remoteConnReader, r)
 		if err != nil {
 			logger.Printf("%+v\n", err)
+			sentry.CaptureException(err.(error))
 			remoteConn.Close()
 			return
 		}

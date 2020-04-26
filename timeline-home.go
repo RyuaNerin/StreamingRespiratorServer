@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cast"
 )
 
@@ -24,6 +25,7 @@ func tlHomeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []P
 	var statusList TwitterStatusList
 	if err := jsonTwitter.NewDecoder(r).Decode(&statusList); err != nil && err != io.EOF {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return
 	}
 	if len(statusList) == 0 {

@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cast"
 )
 
@@ -65,8 +66,12 @@ var (
 
 func (act *Account) Init() {
 	act.httpClient.Transport = &http.Transport{
-		MaxIdleConnsPerHost: 32,
-		Proxy:               proxy,
+		MaxIdleConnsPerHost:   32,
+		Proxy:                 proxy,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 30 * time.Second,
+		IdleConnTimeout:       30 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
 	}
 
 	act.cookieXCsrfToken = regExtractXCsrfToken.FindStringSubmatch(act.Cookie)[1]
@@ -116,6 +121,7 @@ func (act *Account) VerifyCredentials(ctx context.Context) bool {
 		res, err := act.httpClient.Do(req)
 		if err != nil {
 			logger.Printf("%+v\n", err)
+			sentry.CaptureException(err.(error))
 		} else {
 			defer res.Body.Close()
 
@@ -319,6 +325,7 @@ func (act *Account) SendStatusRemovedWithCheck(id uint64) {
 	}
 	if err := jsonTwitter.NewDecoder(res.Body).Decode(&v); err != nil && err != io.EOF {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return
 	}
 
@@ -436,6 +443,7 @@ func (act *Account) GetUserId(ctx context.Context, screenName string) (userId ui
 	resp, err := act.httpClient.Do(req)
 	if err != nil {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return
 	}
 	defer resp.Body.Close()
@@ -445,6 +453,7 @@ func (act *Account) GetUserId(ctx context.Context, screenName string) (userId ui
 	}
 	if err := jsonTwitter.NewDecoder(resp.Body).Decode(&tu); err != nil && err != io.EOF {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return
 	}
 

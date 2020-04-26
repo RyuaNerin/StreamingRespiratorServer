@@ -6,6 +6,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 )
 
 type hyperListener struct {
@@ -24,6 +26,7 @@ func (hl *hyperListener) Accept() (net.Conn, error) {
 	c, err := hl.l.Accept()
 	if err != nil {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return nil, err
 	}
 	return newHyperConn(c, hl.cfg), nil
@@ -53,6 +56,7 @@ func newHyperConn(c net.Conn, tlsConfig *tls.Config) *hyperConn {
 func (hc *hyperConn) Read(b []byte) (n int, err error) {
 	if err := hc.handshake(); err != nil {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return 0, err
 	}
 
@@ -74,6 +78,7 @@ func (hc *hyperConn) handshake() error {
 	}
 	if err != nil {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return err
 	}
 

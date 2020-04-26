@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cast"
 )
 
@@ -25,6 +26,7 @@ func tlDMMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList []Pac
 	var directMessage TwitterDirectMessage
 	if err := jsonTwitter.NewDecoder(r).Decode(&directMessage); err != nil && err != io.EOF {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return
 	}
 

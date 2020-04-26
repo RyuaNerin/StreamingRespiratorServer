@@ -4,6 +4,8 @@ import (
 	"io"
 	"sort"
 	"strconv"
+
+	"github.com/getsentry/sentry-go"
 )
 
 func tlAboutMeGetUrl(cursor string) (method string, url string) {
@@ -22,6 +24,7 @@ func tlAboutMeMain(r io.Reader, isFirstRefresh bool) (cursor string, packetList 
 	var activityList []TwitterActivity
 	if err := jsonTwitter.NewDecoder(r).Decode(&activityList); err != nil && err != io.EOF {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return
 	}
 	if len(activityList) == 0 {

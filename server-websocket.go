@@ -10,7 +10,7 @@ import (
 )
 
 func (s *streamingRespiratorServer) isWebsocket(r *http.Request) bool {
-	return r.Header.Get("Connection") == "upgrade" && r.Header.Get("Upgrade") == "websocket"
+	return r.Header != nil && r.Header.Get("Connection") == "upgrade" && r.Header.Get("Upgrade") == "websocket"
 }
 
 func (s *streamingRespiratorServer) handleProxyWebSocket(client io.ReadWriter, clientReader *bufio.Reader, r *http.Request, useTls bool) {

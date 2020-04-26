@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"runtime"
 	"strconv"
 	"sync"
+	"time"
 )
 
 const (
@@ -68,32 +70,46 @@ func (s *streamingRespiratorServer) copyHeader(dst http.Header, src http.Header)
 	}
 }
 
-func (s *streamingRespiratorServer) copy(client io.ReadWriter, clientReader *bufio.Reader, remote io.ReadWriter, ctx context.Context) {
+func (s *streamingRespiratorServer) copy(client io.ReadWriter, clientReader io.Reader, remote io.ReadWriter, ctx context.Context) {
 	ctx, ctxCancel := context.WithCancel(ctx)
 
-	clientReaderWithContext := readerWithContext{
-		br:  clientReader,
-		ctx: ctx,
-	}
-	remoteReaderWithContext := readerWithContext{
-		br:  bufio.NewReader(remote),
-		ctx: ctx,
-	}
-
 	done := make(chan struct{}, 1)
-	go s.copyOneway(remote, &clientReaderWithContext, done, ctxCancel, "client -> remote")
-	s.copyOneway(client, &remoteReaderWithContext, nil, ctxCancel, "remote -> client")
+	go s.copyOneway(remote, clientReader, remote.(net.Conn), client.(net.Conn), done, ctx, ctxCancel)
+	s.copyOneway(client, remote, client.(net.Conn), remote.(net.Conn), nil, ctx, ctxCancel)
 	<-done
 }
-func (s *streamingRespiratorServer) copyOneway(dst io.Writer, src io.Reader, ch chan struct{}, cancel context.CancelFunc, desc string) {
-	defer cancel()
+func (s *streamingRespiratorServer) copyOneway(dst io.Writer, src io.Reader, dstConn net.Conn, srcConn net.Conn, ch chan struct{}, ctx context.Context, ctxCancel context.CancelFunc) {
+	defer ctxCancel()
 
 	buf := CopyBuffer.Get().([]byte)
 	defer CopyBuffer.Put(buf)
 
-	io.CopyBuffer(dst, src, buf)
+	srcReader := readerWithContext{
+		br:  bufio.NewReader(src),
+		ctx: ctx,
+	}
 
-	logger.Println(desc)
+	for {
+		if srcConn != nil {
+			srcConn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		}
+		nr, er := srcReader.Read(buf)
+		if nr > 0 {
+			if dstConn != nil {
+				dstConn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			}
+			nw, ew := dst.Write(buf[0:nr])
+			if ew != nil {
+				break
+			}
+			if nr != nw {
+				break
+			}
+		}
+		if er != nil {
+			break
+		}
+	}
 
 	if ch != nil {
 		ch <- struct{}{}

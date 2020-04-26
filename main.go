@@ -91,8 +91,12 @@ func main() {
 
 	server2 := http2.Server{}
 	server := http.Server{
-		Handler:  newStreamingRespiratorServer(&server2, &tlsConfig),
-		ErrorLog: logger,
+		Handler:           newStreamingRespiratorServer(&server2, &tlsConfig),
+		ErrorLog:          logger,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 	http2.ConfigureServer(&server, &server2)
 

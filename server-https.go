@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/getsentry/sentry-go"
 )
 
 const (
@@ -66,6 +68,7 @@ func (s *streamingRespiratorServer) handleProxyHttpsMitm(clientConn net.Conn, r 
 	clientConnTls := tls.Server(clientConn, s.tlsConfig)
 	if err = clientConnTls.Handshake(); err != nil {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return
 	}
 
@@ -78,6 +81,7 @@ func (s *streamingRespiratorServer) handleProxyHttpsMitm(clientConn net.Conn, r 
 		r, err = http.ReadRequest(clientConnTlsReader)
 		if err != nil && err != io.EOF {
 			logger.Printf("%+v\n", err)
+			sentry.CaptureException(err.(error))
 			return
 		}
 		r.URL.Scheme = "https"
@@ -101,6 +105,7 @@ func (s *streamingRespiratorServer) handleProxyHttpsMitm(clientConn net.Conn, r 
 				err = resp.Write(clientConnTls)
 				if err != nil && err != io.EOF {
 					logger.Printf("%+v\n", err)
+					sentry.CaptureException(err.(error))
 					return
 				}
 				continue
@@ -149,6 +154,7 @@ func (s *streamingRespiratorServer) handleProxyHttpsMitm(clientConn net.Conn, r 
 
 		if err != nil && err != io.EOF {
 			logger.Printf("%+v\n", err)
+			sentry.CaptureException(err.(error))
 			return
 		}
 	}
@@ -157,6 +163,7 @@ func (s *streamingRespiratorServer) handleProxyHttpsTunnel(clientConn net.Conn, 
 	remoteConn, err := net.Dial("tcp", s.getHost(r, 443))
 	if err != nil {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		clientConn.Write(connectionFailed)
 		return
 	}
@@ -173,6 +180,7 @@ func (s *streamingRespiratorServer) handleProxyHttpsTunnel(clientConn net.Conn, 
 	}
 	if err != nil {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return
 	}
 
@@ -191,12 +199,9 @@ func (w *ProxyResponseWriter) Header() http.Header {
 	return w.header
 }
 func (w *ProxyResponseWriter) Write(p []byte) (int, error) {
-	logger.Println("ProxyResponseWriter write", len(p))
 	return w.w.Write(p)
 }
 func (w *ProxyResponseWriter) WriteHeader(statusCode int) {
-	logger.Println(w.header.Get("Content-Length"))
-
 	if c, err := strconv.ParseInt(w.header.Get("Content-Length"), 10, 64); err == nil {
 		w.contentLength = c
 	}

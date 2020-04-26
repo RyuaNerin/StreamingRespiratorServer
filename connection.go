@@ -33,9 +33,11 @@ type Connection struct {
 }
 
 func newConnection(w http.ResponseWriter, ctx context.Context) *Connection {
+	f, _ := w.(http.Flusher)
+
 	c := &Connection{
 		w:                 w,
-		wFlusher:          w.(http.Flusher),
+		wFlusher:          f,
 		chanClosedRequest: ctx.Done(),
 		chanClosed:        make(chan struct{}),
 		tmrKeepAlive:      time.NewTimer(0),

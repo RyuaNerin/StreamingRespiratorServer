@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 )
 
 const (
@@ -89,6 +91,7 @@ func (tl *TimeLine) update(ctx context.Context, method, url string, isFirstRefre
 	res, err := tl.account.httpClient.Do(req)
 	if err != nil {
 		logger.Printf("%+v\n", err)
+		sentry.CaptureException(err.(error))
 		return "", TLWaitError
 	}
 	defer res.Body.Close()
